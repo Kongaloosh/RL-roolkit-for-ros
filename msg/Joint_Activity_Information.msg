@@ -1,0 +1,4 @@
+string joint_activity
+int64 active_joint
+bool has_switched
+float64 active_joint_normalized

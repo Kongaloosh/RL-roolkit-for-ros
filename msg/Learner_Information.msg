@@ -1,0 +1,2 @@
+float64 current_prediction
+float64 actual_return

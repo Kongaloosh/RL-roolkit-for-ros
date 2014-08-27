@@ -1,0 +1,5 @@
+string motor_name
+float64 normalized_position
+float64 normalized_load
+float64 velocity
+bool is_moving

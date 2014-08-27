@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+import rosdep2 
+import rospy
+import message_filters
+from experiment_wrapper import experiment_wrapper
+from bento_controller.msg import MotorSelection
+from bento_controller.srv import *
+from dynamixel_msgs.msg import JointState
+
+class LearnerNode():
+    
+    def __init__(self):
+        #experiment = experiment_wrapper()
+        pass
+    
+    def callback(self, wrist_rotation_sub, wrist_flexion_sub):
+                  #shoulder_rotation_sub, gripper_sub, elbow_flexion_sub):
+        print "called"
+        self.wrist_rotation_pos = wrist_rotation_sub.current_pos
+        self.wrist_rotation_velocity = wrist_rotation_sub.velocity
+        self.wrist_rotation_load = wrist_rotation_sub.load
+        self.wrist_rotation_is_moving = wrist_rotation_sub.is_moving
+
+        self.wrist_flexion_pos = wrist_flexion_sub.current_pos
+        self.wrist_flexion_velocity = wrist_flexion_sub.velocity
+        self.wrist_flexion_load = wrist_flexion_sub.load
+        self.wrist_flexion_is_moving = wrist_flexion_sub.is_moving
+        """
+        self.shoulder_rotation_pos = shoulder_rotation_sub.current_pos
+        self.shoulder_rotation_velocity = shoulder_rotation_sub.velocity
+        self.shoulder_rotation_load = shoulder_rotation_sub.load
+        self.shoulder_rotation_is_moving = shoulder_rotation_sub.is_moving
+        
+        self.gripper_pos = gripper_sub.current_pos
+        self.gripper_velocity = gripper_sub.velocity
+        self.gripper_load = gripper_sub.load
+        self.gripper_is_moving = gripper_sub.is_moving
+        
+        self.elbow_flexion_pos = elbow_flexion_sub.current_pos
+        self.elbow_flexion_velocity = elbow_flexion_sub.velocity
+        self.elbow_flexion_load = elbow_flexion_sub.load
+        self.elbow_flexion_is_moving = elbow_flexion_sub.is_moving
+        """
+        
+    def _selected_motor_callback(self, msg):
+        print msg
+        self.active_joint = msg.motor_id
+        self.last_active_joint = msg.motor_idx
+    
+    def _motor_state_callback(self,msg):
+        if msg.name == 'wrist_rotation':
+            self.wrist_rotation_pos = msg.current_pos
+            self.wrist_rotation_velocity = msg.velocity
+            self.wrist_rotation_load = msg.load
+            self.wrist_rotation_is_moving = msg.is_moving
+        if msg.name == 'wrist_flexion':
+            self.wrist_flexion_pos = msg.current_pos
+            self.wrist_flexion_velocity = msg.velocity
+            self.wrist_flexion_load = msg.load
+            self.wrist_flexion_is_moving = msg.is_moving
+        if msg.name == 'shoulder_rotation':
+            self.shoulder_rotation_pos = msg.current_pos
+            self.shoulder_rotation_velocity = msg.velocity
+            self.shoulder_rotation_load = msg.load
+            self.shoulder_rotation_is_moving = msg.is_moving
+        if msg.name == 'gripper':
+            self.gripper_pos = msg.current_pos
+            self.gripper_velocity = msg.velocity
+            self.gripper_load = msg.load
+            self.gripper_is_moving = msg.is_moving
+        if msg.name == 'elbow_flexion':
+            self.elbow_flexion_pos = msg.current_pos
+            self.elbow_flexion_velocity = msg.velocity
+            self.elbow_flexion_load = msg.load
+            self.elbow_flexion_is_moving = msg.is_moving
+        #opted to do 'ifs' in case something else eventually gets published and we assume that it's the last joint when it's something new.
+        print msg    
+            
+    def listener(self):
+        rospy.init_node('listener', anonymous=True)
+        
+        #motor_selection_sub = message_filters.Subscriber('/bento/selected_motor', MotorSelection)
+        self.wrist_rotation_sub = message_filters.Subscriber('/bento_controller/dynamixel/wrist_rotation/state', JointState)
+        self.wrist_flexion_sub = message_filters.Subscriber('/bento_controller/dynamixel/wrist_flexion/state', JointState)
+        #self.shoulder_rotation_sub = message_filters.Subscriber('/bento_controller/dynamixel/shoulder_rotation/state', JointState)
+        #self.gripper_sub = message_filters.Subscriber('/bento_controller/dynamixel/gripper/state', JointState)
+        #self.elbow_flexion_sub = message_filters.Subscriber('/bento_controller/dynamixel/elbow_flexion/state', JointState)
+
+        self.time_synchronizer = message_filters.TimeSynchronizer([self.wrist_rotation_sub, self.wrist_flexion_sub], 10)
+                                                            # self.shoulder_rotation_sub, \
+                                                            #self.gripper_sub, self.elbow_flexion_sub], 100)
+
+        self.time_synchronizer.registerCallback(self.callback)
+        print "synch"
+        rospy.spin()
+
+if __name__ == '__main__':
+    ros = LearnerNode()
+    try:
+        ros.listener()
+    except rospy.ROSInterruptException: pass
