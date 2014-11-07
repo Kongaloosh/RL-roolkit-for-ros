@@ -1,7 +1,8 @@
 #!/usr/bin/env python
+from experiment_state_information import *
 import numpy
 from traces import TraceHolder
-from tiles import CollisionTable, loadtiles, tiles
+from tiles import CollisionTable, loadtiles, tiles, getTiles, simple_tiles
 from _ast import Num
 from numpy import sort
 from verifier import Verifier
@@ -12,6 +13,16 @@ class Learner(object):
     num_steps = 0
     prediction = 0
     theta = list()
+    
+    def __init__(self):
+        self.gripper_states = gripper()
+        self.wrist_flexion_states = not_gripper()
+        self.wrist_rotation_states = not_gripper()
+        self.shoulder_rotation_states = not_gripper()
+        self.elbow_flexion_states = not_gripper() 
+        self.joint_activity_states = joint_activity()
+        self.joint_activity_states.active_joint = 0
+        self.joint_activity_states.switch = 0
     
     def update(self, features, target=None):
         pass
@@ -49,6 +60,7 @@ class Learner(object):
     
     def loss(self):
         pass
+    
     
 class Partition_Tree_Learner(Learner):   
     """
@@ -237,26 +249,69 @@ class TDLambdaLearner(Learner):
             In calls for get tiles, the collision table is used in stead of memory_size, as it already has it.
     
     """
-    def __init__(self, numTilings = 1, parameters = 2, rlAlpha = 0.5, rlLambda = 0.9, rlGamma = 0.9, cTableSize=0):
+    def __init__(self, numTilings = 1, num_bins = 2, rlAlpha = 0.5, rlLambda = 0.9, rlGamma = 0.9, cTableSize=0):
         """ If you want to run an example of the code, simply just leave the parameters blank and it'll automatically set based on the parameters. """
         self.numTilings = numTilings
         self.tileWidths = list()
-        self.parameters = parameters
+        self.num_bins = num_bins
         self.rlAlpha = rlAlpha
         self.rlLambda = rlLambda
         self.rlGamma = rlGamma
     
         self.prediction = None
+        self.current_prediction = 0
+        self.delta = 0
         self.lastS = None
+        self.previous_tiles = [0 for item in range(self.numTilings)]
+        self.previous_state = [None for item in range(self.numTilings*self.num_bins)]
+        self.previous_prediction = None
         self.lastQ = None
         self.lastPrediction = None
         self.lastReward = None
-        self.traceH = TraceHolder((self.numTilings**(self.parameters)+1), self.rlLambda, 1000)
-        self.F = [0 for item in range(self.numTilings)] # the indices of the returned tiles will go in here
-        self.theta = [0 for item in range((self.numTilings**(self.parameters+1))+1)] # weight vector.
-        self.cTable = CollisionTable(cTableSize, 'safe') # look into this...
+        self.traceH = TraceHolder((self.numTilings*(self.num_bins)), 0.01, 1000) # TraceHolder(mem, minT, maxN)
+        self.F = [0 for item in range(self.numTilings*self.num_bins)] # the indices of the returned tiles will go in here
+        self.theta = [0 for item in range((self.numTilings*(self.num_bins)))] # weight vector.
+        self.weights = [0 for item in range((self.numTilings*(self.num_bins)))]
+        self.e_trace = [0 for item in range(self.numTilings*self.num_bins)] # added by Ann
+        self.cTable = CollisionTable(cTableSize, 'super safe') # look into this...
+#         stats = self.cTable.stats()
+#         print stats
         self.verifier = Verifier(self.rlGamma)
-        
+    
+    def Ann_update(self, current_state, numstates, reward=None):
+        if current_state != None:
+            self.Ann_learn(current_state, reward, numstates)
+            return self.current_prediction
+        else: 
+            return None
+     
+    def Ann_learn(self, current_state, reward, numstates):   
+        active_tiles = simple_tiles(self.numTilings, self.numTilings*self.num_bins, current_state, numstates) # returns index of active features
+        print "active tiles = " + str(active_tiles)
+        print "previous tiles = " + str(self.previous_tiles)
+        if self.previous_prediction != None:
+#             self.current_prediction = 0
+            for index in active_tiles:
+                print 'index = ' + str(index)
+                self.current_prediction = self.weights[index] # not sure if this is right
+                print 'weights[index] = ' + str(self.weights[index])     
+            self.delta = reward + self.rlGamma * self.current_prediction - self.previous_prediction
+            print 'self.delta = ' + str(self.delta)
+            if self.previous_state != None:
+                self.previous_state = [0 for item in range(self.numTilings*self.num_bins)]
+                for index in self.previous_tiles:
+                    self.previous_state[index] = 1 
+                    print 'previous state = ' + str(self.previous_state)
+                    self.e_trace = [x + y for x, y in zip(self.previous_state, [i * self.rlLambda * self.rlGamma for i in self.e_trace])]
+                    print 'e_trace = ' + str(self.e_trace)
+            self.weights = [x + y for x, y in zip(self.weights, [i * self.rlAlpha * self.delta for i in self.e_trace])] # alpha needs to be divided by N
+            print 'weights = ' + str(self.weights)
+        self.previous_tiles = active_tiles
+        self.previous_prediction = self.current_prediction
+        print 'current prediction = ' + str(self.current_prediction)
+        self.verifier.updateReward(reward)
+        self.verifier.updatePrediction(self.current_prediction)
+     
     def update(self, features, target=None):
         if features != None:
             self.learn(features, target)
@@ -265,15 +320,20 @@ class TDLambdaLearner(Learner):
      
     def learn(self, state, reward):
         self.loadFeatures(state, self.F)
-        currentq = self.computeQ()
+        currentq = self.computeQ() # computeQ returns w*x' (current prediction)
         if self.lastS != None:
-            delta = reward - self.lastQ
-            delta += self.rlGamma * currentq
-            amt = delta * (self.rlAlpha / self.numTilings)
+            delta = reward + self.rlGamma*currentq - self.lastQ # delta = r + gamma*w*x' - w*x
             for i in self.traceH.getTraceIndices():
-                self.theta[i] += amt * self.traceH.getTrace(i)
+                self.theta[i] += delta * (self.rlAlpha / self.numTilings) * self.traceH.getTrace(i) # delta * alpha/N * e
+                print 'traces = ' + str(self.traceH.getTrace(i))
             self.traceH.decayTraces(self.rlGamma)
             self.traceH.replaceTraces(self.F)
+#             self.e_trace = min(rlLambda*self.e_trace + x, 1) # added by Ann
+#             print 'delta = ' + str(delta)
+#             print 'trace indices = ' + str(self.traceH.getTraceIndices())
+#             print 'theta' + str(self.theta)
+#             print 'self.F'+ str(self.F)
+#             print 'lastS' + str(self.lastS)
         self.lastQ = currentq
         self.lastS = state
         self.prediction = currentq
@@ -289,8 +349,14 @@ class TDLambdaLearner(Learner):
         return q
     
     def loadFeatures(self, stateVars, featureVector):
-        loadtiles(featureVector, 0, self.numTilings, self.numTilings**(self.parameters), stateVars)
-        print "featureVector " + str(len(self.theta))
+#         loadtiles(featureVector, 0, self.numTilings*self.num_bins, self.num_bins, stateVars)
+#        active_tiles = loadtiles([0], 0, self.numTilings*self.num_bins, 1024, stateVars)
+#         active_tiles = simple_tiles(self.numTilings, self.numTilings*self.num_bins, stateVars)
+#         simple_tiles(self.numTilings, self.numTilings*self.num_bins, stateVars)
+#         print "featureVector " + str(len(self.theta))
+#         print 'active tiles = ' + str(active_tiles)
+#         print 'numTilings = ' + str(self.numTilings)
+#         print 'stateVars = ' + str(stateVars)
         """ 
         As provided in Rich's explanation
                tiles                   ; a provided array for the tile indices to go into
@@ -328,10 +394,10 @@ class True_Online_TD2(TDLambdaLearner):
         True online TD implementation
             * Has Dutch traces
     """
-    def __init__(self, numTilings = 2, parameters = 2, rlAlpha = 0.5, rlLambda = 0.9, rlGamma = 0.9, cTableSize=0):
+    def __init__(self, numTilings = 2, num_bins = 2, rlAlpha = 0.5, rlLambda = 0.9, rlGamma = 0.9, cTableSize=0):
         self.numTilings = numTilings
         self.tileWidths = list()
-        self.parameters = parameters
+        self.num_bins = num_bins
         self.rlAlpha = rlAlpha
         self.rlLambda = rlLambda
         self.rlGamma = rlGamma
@@ -343,10 +409,10 @@ class True_Online_TD2(TDLambdaLearner):
         self.lastReward = None
         self.F = [0 for item in range(self.numTilings)]
         self.F2 = [0 for item in range(self.numTilings)]
-        self.theta = [0 for item in range((self.numTilings**(self.parameters+1))+1)]
+        self.theta = [0 for item in range((self.numTilings**(self.num_bins+1))+1)]
         self.cTable = CollisionTable(cTableSize, 'safe')
         self.update(None, None)
-        self.e = [0 for item in range((self.numTilings**(self.parameters+1))+1)]
+        self.e = [0 for item in range((self.numTilings**(self.num_bins+1))+1)]
         self.verifier = Verifier(self.rlGamma)
         
     def update(self, features, target=None):
@@ -394,33 +460,60 @@ class True_Online_TD2(TDLambdaLearner):
         
 class SwitchingLearner_bento(Learner):
     
-    def __init__(self):
+    def __init__(self):#, numTilings = 2, num_bins = 2, rlAlpha = 0.5, rlLambda = 0.9, rlGamma = 0.9, cTableSize=0):
         #traits lib look into it 
-        self.tdLambda_hand = TDLambdaLearner()
-        self.tdLambda_wristRotation = TDLambdaLearner()
-        self.tdLambda_wristFlexion = TDLambdaLearner()
-        self.tdLambda_elbow = TDLambdaLearner()
-        self.tdLambda_shoulder = TDLambdaLearner()
+#         self.numTilings = numTilings
+#         self.tileWidths = list()
+#         self.num_bins = num_bins
+#         self.rlAlpha = rlAlpha
+#         self.rlLambda = rlLambda
+#         self.rlGamma = rlGamma
+        Learner.__init__(self)
+        self.rlGamma = 0.97
+        self.verifier = Verifier(self.rlGamma) # added this
+        self.tdLambda_hand = TDLambdaLearner(8,2,0.1,0.99,0.97,64)
+        self.tdLambda_wristRotation = TDLambdaLearner(8,2,0.1,0.99,0.97,64)
+        self.tdLambda_wristFlexion = TDLambdaLearner(8,2,0.1,0.99,0.97,64)
+        self.tdLambda_elbow = TDLambdaLearner(8,2,0.1,0.99,0.97,64)
+        self.tdLambda_shoulder = TDLambdaLearner(8,2,0.1,0.99,0.97,64)
+#         self.joint_activity_states = joint_activity()
+#         self.joint_activity_states.active_joint = 0
+#         self.switch_signal = 0
         
     def loadFeatures(self, stateVars):
         raise Exception("NOT IMPLEMENTED -- NOT USED")
     
     def update(self, features, target):
+#         print features
+#         print target[0]
+#         print target[1]
+#         print target[2]
+#         print target[3]
+#         print target[4]
         self.tdLambda_hand.update(features,target[0])
         self.tdLambda_wristRotation.update(features,target[1])
         self.tdLambda_wristFlexion.update(features,target[2])
         self.tdLambda_elbow.update(features,target[3])
         self.tdLambda_shoulder.update(features,target[4])
+        
     
     def set_weights(self):
         # update the weight given weight_init
         raise Exception("NOT IMPLEMENTED -- NOT USED")
     
+    
     def predict(self, x):
         # predict the order of joints
-        jointSwitchingJoints = numpy.array([[self.tdLambda_hand.predict(x),"Hand"], [self.tdLambda_wristRotation.predict(x),"Wrist_Rotation"], [self.tdLambda_wristFlexion.predict(x), "Wrist_Flexion"], [self.tdLambda_elbow.predict(x),"Elbow"], [self.tdLambda_shoulder.predict(x), "Shoulder"]])
-        jointSwitchingJoints = sort(jointSwitchingJoints, 1)
-        return jointSwitchingJoints
+#         jointSwitchingJoints = numpy.array([[self.tdLambda_hand.predict(x),"Hand"], [self.tdLambda_wristRotation.predict(x),"Wrist_Rotation"], [self.tdLambda_wristFlexion.predict(x), "Wrist_Flexion"], [self.tdLambda_elbow.predict(x),"Elbow"], [self.tdLambda_shoulder.predict(x), "Shoulder"]])
+#         self.joint_activity_states = joint_activity_states
+        
+#         print "active joint from learning toolkit = " + str(self.joint_activity_states.active_joint)
+         
+        self.joint_predictions = [(self.tdLambda_hand.predict(x),"Hand"), (self.tdLambda_wristRotation.predict(x),"Wrist_Rotation"), (self.tdLambda_wristFlexion.predict(x), "Wrist_Flexion"), (self.tdLambda_elbow.predict(x),"Elbow"), (self.tdLambda_shoulder.predict(x), "Shoulder")]
+#         self.dtype = [('prediction', float),('joint', 'S10')]
+#         self.joint_order = numpy.array(self.values, dtype=self.dtype) # list of joints and their respective predictions
+#         self.sorted_order = numpy.sort(self.joint_order,order='prediction') # list of joints in order of lowest to highest prediction
+        return self.joint_predictions
     
     def loss(self):
         raise Exception("NOT IMPLEMENTED -- NOT USED")

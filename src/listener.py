@@ -4,6 +4,7 @@ import rospy
 import message_filters
 from experiment_wrapper import *
 from experiment_state_information import *
+from learning_toolkit import *
 from bento_controller.msg import MotorSelection
 from bento_controller.srv import *
 from dynamixel_msgs.msg import JointState
@@ -19,7 +20,9 @@ class LearnerNode():
 
             ---watch for latency; if we have an issue, remove it.
         """
-        self.experiment = example_experiment_predict_shoulder_movement_true_online_vs_td2()
+        self.experiment = experiment_adaptive_joint_switching() # change this per experiment
+#         self.experiment = example_experiment_predict_shoulder_movement_true_online_vs_td()
+#         self.experiment2 = Foo()
         self.wrist_rotation_state = not_gripper()
         self.wrist_flexion_state = not_gripper()
         self.shoulder_rotation_state = not_gripper()
@@ -29,9 +32,9 @@ class LearnerNode():
         self.currentMessages = list()
         
     def _selected_motor_callback(self, msg):
-        self.joint_activity_state.update(msg.motor_id, True)
+        self.joint_activity_state.update(msg.motor_id, msg.motor_idx)
     
-    def _motor_state_callback(self,msg):
+    def _motor_state_callback(self, msg):
         """This is bad code and I feel bad; I am sorry."""
         if msg.name == 'wrist_rotation':
             self.wrist_rotation_state.update(msg.current_pos, msg.load,\
@@ -61,11 +64,23 @@ class LearnerNode():
         
         r = rospy.Rate(10) #10hz
         while not rospy.is_shutdown(): 
-            print rospy.get_rostime()
+            print '==========================='
+            print 'Time: ' + str(rospy.get_rostime())
             self.experiment.update_perception(self.gripper_state, self.wrist_flexion_state,\
                        self.wrist_rotation_state, self.shoulder_rotation_state,\
                        self.elbow_flexion_state, self.joint_activity_state)
+#             self.experiment2.handle_trigger()
             r.sleep()
+            
+#     def talker():
+#         pub = rospy.Publisher('chatter',String, queue_size=10)
+#         rospy.init_node('talker',anonymous = True)
+#         r = rospy.Rate(10)
+#         while not rospy.is_shutdown():
+#             str = "hi"
+#             rospy.loginfo(str)
+#             pub.publish(str)
+#             r.sleep()
             
 if __name__ == '__main__':
     ros = LearnerNode()

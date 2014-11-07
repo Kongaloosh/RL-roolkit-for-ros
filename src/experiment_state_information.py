@@ -61,7 +61,8 @@ class not_gripper(servo_info):
     """
     def update(self, position, load, velocity, is_moving):
         servo_info.update(self, position, load, velocity, is_moving)
-        self.normalized_position = float(self.position)/4095.0
+#         self.normalized_position = float(self.position)/4095.0
+        self.normalized_position = (float(self.position)-1.5)/3.22
         self.normalized_load = float(self.load+1)/2.0
         self.normalized_velocity = None
 
@@ -84,4 +85,5 @@ class joint_activity(state):
         self.active_joint = active_joint
         self.switch = switch
         self.active_joint_normalized = float(self.active_joint)/5.0
+
     

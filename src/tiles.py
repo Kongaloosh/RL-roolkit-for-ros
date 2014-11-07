@@ -245,6 +245,7 @@ def loadtiles (tiles, startelement, numtilings, memctable, floats, ints=[]):
         fixcoord(_coordinates, numtilings, numfloats, j)
         hnum = hashfun(_coordinates, numcoord, memctable)
         tiles[startelement + j] = hnum
+    return tiles # added by Ann       
         
 def tileswrap(numtilings, memctable, floats, wrapwidths, ints=[]):
     """Returns list of numtilings tiles corresponding to variables (floats and ints),
@@ -287,6 +288,14 @@ def loadtileswrap(tiles, startelement, numtilings, memctable, floats, wrapwidths
         fixcoordwrap(_coordinates, numtilings, numfloats, j, wrapwidths)
         hnum = hashfun(_coordinates, numcoord, memctable)
         tiles[startelement + j] = hnum
+        
+
+def simple_tiles(numtilings, memctable, features, numstates):
+    numfeatures = len(features)
+    tiled_features = [None]*numfeatures
+    for i in range(numfeatures):
+        tiled_features[i] = int(math.floor(features[i]))
+    return tiled_features
 
 getTiles = tiles
 loadTiles = loadtiles
