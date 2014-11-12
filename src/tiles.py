@@ -292,9 +292,16 @@ def loadtileswrap(tiles, startelement, numtilings, memctable, floats, wrapwidths
 
 def simple_tiles(numtilings, memctable, features, numstates):
     numfeatures = len(features)
-    tiled_features = [None]*numfeatures
+    int_features = [None]*numfeatures
+    tiled_features = [0]*numtilings
     for i in range(numfeatures):
-        tiled_features[i] = int(math.floor(features[i]))
+        int_features[i] = int(math.floor(features[i]))
+#     print 'numfeatures = ' + str(numfeatures)
+#     print 'numstates = ' + str(numstates)
+    for i in range(numtilings):
+        for j in range(numfeatures):
+            tiled_features[i] += int_features[j]*numstates**j
+#             print numstates**j
     return tiled_features
 
 getTiles = tiles

@@ -252,76 +252,79 @@ class TDLambdaLearner(Learner):
     def __init__(self, numTilings = 1, num_bins = 2, rlAlpha = 0.5, rlLambda = 0.9, rlGamma = 0.9, cTableSize=0):
         """ If you want to run an example of the code, simply just leave the parameters blank and it'll automatically set based on the parameters. """
         self.numTilings = numTilings
-        self.tileWidths = list()
         self.num_bins = num_bins
         self.rlAlpha = rlAlpha
         self.rlLambda = rlLambda
         self.rlGamma = rlGamma
     
+        self.mem_size = 512
         self.prediction = None
         self.current_prediction = 0
         self.delta = 0
         self.lastS = None
         self.previous_tiles = [0 for item in range(self.numTilings)]
-        self.previous_state = [None for item in range(self.numTilings*self.num_bins)]
+#         self.previous_state = [None for item in range(self.numTilings*(self.num_bins)**10)]
         self.previous_prediction = None
         self.lastQ = None
         self.lastPrediction = None
         self.lastReward = None
-        self.traceH = TraceHolder((self.numTilings*(self.num_bins)), 0.01, 1000) # TraceHolder(mem, minT, maxN)
-        self.F = [0 for item in range(self.numTilings*self.num_bins)] # the indices of the returned tiles will go in here
-        self.theta = [0 for item in range((self.numTilings*(self.num_bins)))] # weight vector.
-        self.weights = [0 for item in range((self.numTilings*(self.num_bins)))]
-        self.e_trace = [0 for item in range(self.numTilings*self.num_bins)] # added by Ann
+        self.traceH = TraceHolder(self.mem_size, 0.01, 1000) # TraceHolder(mem, minT, maxN)
+        self.F = [0 for item in range(self.numTilings)] # the indices of the returned tiles will go in here
+        self.theta = [0 for item in range(self.mem_size)] # weight vector.
+#         self.weights = [0 for item in range(self.numTilings*(self.num_bins)**10)]
+#         self.e_trace = [0 for item in range(self.numTilings*(self.num_bins)**10)] # added by Ann
         self.cTable = CollisionTable(cTableSize, 'super safe') # look into this...
 #         stats = self.cTable.stats()
 #         print stats
         self.verifier = Verifier(self.rlGamma)
     
-    def Ann_update(self, current_state, numstates, reward=None):
-        if current_state != None:
-            self.Ann_learn(current_state, reward, numstates)
-            return self.current_prediction
-        else: 
-            return None
-     
-    def Ann_learn(self, current_state, reward, numstates):   
-        active_tiles = simple_tiles(self.numTilings, self.numTilings*self.num_bins, current_state, numstates) # returns index of active features
-        print "active tiles = " + str(active_tiles)
-        print "previous tiles = " + str(self.previous_tiles)
-        if self.previous_prediction != None:
-#             self.current_prediction = 0
-            for index in active_tiles:
-                print 'index = ' + str(index)
-                self.current_prediction = self.weights[index] # not sure if this is right
-                print 'weights[index] = ' + str(self.weights[index])     
-            self.delta = reward + self.rlGamma * self.current_prediction - self.previous_prediction
-            print 'self.delta = ' + str(self.delta)
-            if self.previous_state != None:
-                self.previous_state = [0 for item in range(self.numTilings*self.num_bins)]
-                for index in self.previous_tiles:
-                    self.previous_state[index] = 1 
-                    print 'previous state = ' + str(self.previous_state)
-                    self.e_trace = [x + y for x, y in zip(self.previous_state, [i * self.rlLambda * self.rlGamma for i in self.e_trace])]
-                    print 'e_trace = ' + str(self.e_trace)
-            self.weights = [x + y for x, y in zip(self.weights, [i * self.rlAlpha * self.delta for i in self.e_trace])] # alpha needs to be divided by N
-            print 'weights = ' + str(self.weights)
-        self.previous_tiles = active_tiles
-        self.previous_prediction = self.current_prediction
-        print 'current prediction = ' + str(self.current_prediction)
-        self.verifier.updateReward(reward)
-        self.verifier.updatePrediction(self.current_prediction)
+#     def Ann_update(self, current_state, numstates, reward=None):
+#         if current_state != None:
+#             self.Ann_learn(current_state, reward, numstates)
+#             return self.current_prediction
+#         else: 
+#             return None
+#      
+#     def Ann_learn(self, current_state, reward, numstates):   
+#         active_tiles = simple_tiles(self.numTilings, self.numTilings*self.num_bins, current_state, numstates) # returns index of active features
+#         print "active tiles = " + str(active_tiles)
+#         print "previous tiles = " + str(self.previous_tiles)
+#         if self.previous_prediction != None:
+# #             self.current_prediction = 0
+#             for index in active_tiles:
+#                 print 'index = ' + str(index)
+#                 self.current_prediction = self.weights[index] # not sure if this is right
+# #                 print 'weights[index] = ' + str(self.weights[index])     
+#             self.delta = reward + self.rlGamma * self.current_prediction - self.previous_prediction
+#             print 'self.delta = ' + str(self.delta)
+#             if self.previous_state != None:
+#                 self.previous_state = [0 for item in range(self.numTilings*(self.num_bins)**10)]
+#                 for index in self.previous_tiles:
+#                     self.previous_state[index] = 1 
+# #                     print 'previous state = ' + str(self.previous_state)
+#                     self.e_trace = [x + y for x, y in zip(self.previous_state, [i * self.rlLambda * self.rlGamma for i in self.e_trace])]
+# #                     print 'e_trace = ' + str(self.e_trace)
+#             self.weights = [x + y for x, y in zip(self.weights, [i * self.rlAlpha * self.delta for i in self.e_trace])] # alpha needs to be divided by N
+# #             print 'weights = ' + str(self.weights)
+#         self.previous_tiles = active_tiles
+#         self.previous_prediction = self.current_prediction
+#         print 'current prediction = ' + str(self.current_prediction)
+#         self.verifier.updateReward(reward)
+#         self.verifier.updatePrediction(self.current_prediction)
+#         self.normalized_prediction = self.current_prediction * (1-self.rlGamma)
+#         print 'normalized prediction = ' + str(self.normalized_prediction)
      
     def update(self, features, target=None):
         if features != None:
             self.learn(features, target)
             return self.prediction
         else: return None
-     
+      
     def learn(self, state, reward):
         self.loadFeatures(state, self.F)
         currentq = self.computeQ() # computeQ returns w*x' (current prediction)
         if self.lastS != None:
+            print 'reward = ' + str(reward)
             delta = reward + self.rlGamma*currentq - self.lastQ # delta = r + gamma*w*x' - w*x
             for i in self.traceH.getTraceIndices():
                 self.theta[i] += delta * (self.rlAlpha / self.numTilings) * self.traceH.getTrace(i) # delta * alpha/N * e
@@ -329,7 +332,7 @@ class TDLambdaLearner(Learner):
             self.traceH.decayTraces(self.rlGamma)
             self.traceH.replaceTraces(self.F)
 #             self.e_trace = min(rlLambda*self.e_trace + x, 1) # added by Ann
-#             print 'delta = ' + str(delta)
+            print 'delta = ' + str(delta)
 #             print 'trace indices = ' + str(self.traceH.getTraceIndices())
 #             print 'theta' + str(self.theta)
 #             print 'self.F'+ str(self.F)
@@ -340,17 +343,23 @@ class TDLambdaLearner(Learner):
         self.num_steps+=1
         self.verifier.updateReward(reward)
         self.verifier.updatePrediction(self.prediction)
+        self.normalized_prediction = self.prediction * (1 - self.rlGamma)
         
 
     def computeQ(self):
-        q = 0
+        q = 0 
         for i in self.F:
             q += self.theta[i]
         return q
     
     def loadFeatures(self, stateVars, featureVector):
-#         loadtiles(featureVector, 0, self.numTilings*self.num_bins, self.num_bins, stateVars)
-#        active_tiles = loadtiles([0], 0, self.numTilings*self.num_bins, 1024, stateVars)
+#         loadtiles(featureVector, 0, self.numTilings, self.num_bins, stateVars)
+#         active_tiles = loadtiles([0], 0, self.numTilings*self.num_bins, 1024, stateVars)
+#         buffer = [0] # array of length numtilings
+#         tiles(1,512,stateVars)
+#         active_tiles = loadtiles([0], 0, self.numTilings, self.num_bins, stateVars)
+        self.F = active_tiles = tiles(self.numTilings,self.mem_size,stateVars)
+        print 'tiles = ' + str(active_tiles)
 #         active_tiles = simple_tiles(self.numTilings, self.numTilings*self.num_bins, stateVars)
 #         simple_tiles(self.numTilings, self.numTilings*self.num_bins, stateVars)
 #         print "featureVector " + str(len(self.theta))

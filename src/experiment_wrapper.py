@@ -285,12 +285,12 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         """ Instantiate a separate TD Lambda Learner for each joint:
             TDLambdaLearner(numTilings, num_bins, alpha, lambda, gamma, cTableSize) """
-        self.td0 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Hand
-        self.td1 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Wrist Rotation
-        self.td2 = TDLambdaLearner(1,16,0.001,0.999,0.99,64) # TDLambda Wrist Flexion
-        self.td3 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Elbow
-        self.td4 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Shoulder
-        self.td_switch = TDLambdaLearner(1,16,0.1,0.9,0.99,64) # 'When' prediction learner
+        self.td0 = TDLambdaLearner(8,128,0.01,0.999,0.99,64) # TDLambda Hand
+#         self.td1 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Wrist Rotation
+        self.td2 = TDLambdaLearner(8,128,0.01,0.999,0.9,64) # TDLambda Wrist Flexion
+#         self.td3 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Elbow
+#         self.td4 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Shoulder
+#         self.td_switch = TDLambdaLearner(1,16,0.1,0.9,0.99,64) # 'When' prediction learner
 #         self.td = self.learner # not really used
         
         self.active_joint_holder = None
@@ -397,20 +397,21 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         """ Defines the state for joint predictions. Includes current position and 
             velocity for all 5 joints. """
-        state_joints = [(self.shoulder_rotation_states.normalized_position)*16]
-        self.numstates_joints = len(state_joints)
-        print "len = " + str(self.numstates_joints)
+#         state_joints = [(self.shoulder_rotation_states.normalized_position)*16]
         
-#         state_joints = [self.shoulder_rotation_states.normalized_position*16,\
-#                    (self.shoulder_rotation_states.velocity+1.5)*16/4,\
-#                      self.elbow_flexion_states.normalized_position*16,\
-#                        (self.elbow_flexion_states.velocity+1.5)*16/4,\
-#                          self.wrist_rotation_states.normalized_position*16,\
-#                            (self.wrist_rotation_states.velocity+1.5)*16/4,\
-#                              self.wrist_flexion_states.normalized_position*16,\
-#                                (self.wrist_flexion_states.velocity+1.5)*16/4,\
-#                                  self.gripper_states.normalized_position*16,\
-#                                    (self.gripper_states.velocity+1.5)*16/4]
+        
+        state_joints = [self.shoulder_rotation_states.normalized_position*16,\
+                   (self.shoulder_rotation_states.velocity+1.5)*16/4,\
+                     self.elbow_flexion_states.normalized_position*16,\
+                       (self.elbow_flexion_states.velocity+1.5)*16/4,\
+                         self.wrist_rotation_states.normalized_position*16,\
+                           (self.wrist_rotation_states.velocity+1.5)*16/4,\
+                             self.wrist_flexion_states.normalized_position*16,\
+                               (self.wrist_flexion_states.velocity+1.5)*16/4,\
+                                 self.gripper_states.normalized_position*16,\
+                                   (self.gripper_states.velocity+1.5)*16/4]
+        self.numstates_joints = len(state_joints)
+#         print "len = " + str(self.numstates_joints)
         
         """ Defines the state for the switch signal -- includes velocity, position, and traces """
         state_switch = [self.shoulder_rotation_states.normalized_position]
@@ -464,15 +465,16 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         """ Updates to the td learners """
 #             self.td.update(state_joints, reward_joints) # not really used
-#         self.td0.Ann_update(state_joints, reward_joints[0])
+        self.td0.update(state_joints, reward_joints[0])
 #         self.td1.Ann_update(state_joints, reward_joints[1])
-        self.td2.Ann_update(state_joints, self.numstates_joints, reward_joints[2])
+#         self.td2.Ann_update(state_joints, self.numstates_joints, reward_joints[2])
+        self.td2.update(state_joints, reward_joints[2])
 #         self.td3.Ann_update(state_joints, reward_joints[3])
 #         self.td4.Ann_update(state_joints, reward_joints[4])
 #         self.td_switch.Ann_update(state_switch, reward_switch)
         
         """ Publish reward for each joint """
-#         self.publisher_reward_gripper.publish(reward_joints[0])
+        self.publisher_reward_gripper.publish(reward_joints[0])
 #         self.publisher_reward_wrist_rotation.publish(reward_joints[1])
         self.publisher_reward_wrist_flex.publish(reward_joints[2])
 #         self.publisher_reward_elbow.publish(reward_joints[3])
@@ -480,16 +482,16 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
 #         self.publisher_reward_switch.publish(reward_switch)
         
         """ Publish prediction for each joint """
-#         self.publisher_learner_gripper.publish(self.td0.prediction)
+        self.publisher_learner_gripper.publish(self.td0.prediction)
 #         self.publisher_learner_wrist_rotation.publish(self.td1.prediction)
-        self.publisher_learner_wrist_flex.publish(self.td2.current_prediction)
+        self.publisher_learner_wrist_flex.publish(self.td2.prediction) # change this to self.td2.current_prediction for my learner
 #         self.publisher_learner_elbow.publish(self.td3.prediction)
 #         self.publisher_learner_shoulder.publish(self.td4.prediction)
 #         self.publisher_learner_switch.publish(self.td_switch.prediction)
 
         """ Publish return for each joint """
         if self.td2.verifier.calculateReturn() != None :
-#             self.publisher_return_gripper.publish(self.td0.verifier.calculateReturn())
+            self.publisher_return_gripper.publish(self.td0.verifier.calculateReturn())
 #             self.publisher_return_wrist_rotation.publish(self.td1.verifier.calculateReturn())
             self.publisher_return_wrist_flex.publish(self.td2.verifier.calculateReturn())
 #             self.publisher_return_elbow.publish(self.td3.verifier.calculateReturn())
@@ -498,18 +500,18 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         """ Prediction for each of the joints. The currently active joint must not be 
             the highest prediction; set the active joint prediction value to -1 """
-        if (self.joint_activity_states.active_joint == 1): # i.e. shoulder
-            self.shoulder_prediction = -1.0
-        else:
-            self.shoulder_prediction = self.td4.predict(state_joints)
-        if (self.joint_activity_states.active_joint == 2): # i.e. elbow
-            self.elbow_prediction = -1.0
-        else:
-            self.elbow_prediction = self.td3.predict(state_joints)
-        if (self.joint_activity_states.active_joint == 3): # i.e. wrist rotation
-            self.wrist_rotation_prediction = -1.0
-        else:
-            self.wrist_rotation_prediction = self.td1.predict(state_joints)
+#         if (self.joint_activity_states.active_joint == 1): # i.e. shoulder
+#             self.shoulder_prediction = -1.0
+#         else:
+#             self.shoulder_prediction = self.td4.predict(state_joints)
+#         if (self.joint_activity_states.active_joint == 2): # i.e. elbow
+#             self.elbow_prediction = -1.0
+#         else:
+#             self.elbow_prediction = self.td3.predict(state_joints)
+#         if (self.joint_activity_states.active_joint == 3): # i.e. wrist rotation
+#             self.wrist_rotation_prediction = -1.0
+#         else:
+#             self.wrist_rotation_prediction = self.td1.predict(state_joints)
         if (self.joint_activity_states.active_joint == 4): # i.e. wrist flexion
             self.wrist_flexion_prediction = -1.0
         else:
@@ -518,7 +520,7 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
             self.hand_prediction = -1.0
         else:
             self.hand_prediction = self.td0.predict(state_joints)
-        self.switch_prediction = self.td_switch.predict(state_switch)
+#         self.switch_prediction = self.td_switch.predict(state_switch)
         
         
         
@@ -540,7 +542,7 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
 #         print '=============================='
         print "wrist flex verifier = " + str(self.td2.verifier.calculateReturn()) 
 #         print "shoulder prediction = " + str(self.td4.prediction)
-        print "wrist flex prediction = " + str(self.td2.current_prediction)
+        print "wrist flex prediction = " + str(self.td2.prediction) # change this to self.td2.current_prediction for using my learner
 #         print "gripper position = " + str(self.gripper_states.normalized_position)
         print "wristflex position = " + str(self.wrist_flexion_states.normalized_position)
 #         print "wristrotate position = " + str(self.wrist_rotation_states.normalized_position)
@@ -552,16 +554,17 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
 #         print "moving = " + str(self.moving)
 #         print "shoulder velocity = " + str((self.shoulder_rotation_states.velocity+1.5)/4)
 #         print "state joints = " + str(state_joints)
-    
         
-#         self.joint_list = [JointGroupJoint(joint_id=0, min_speed=0, max_speed=1),\
+        
+        
+        self.joint_list = [JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
+                            JointGroupJoint(joint_id=4, min_speed=0, max_speed=1),\
+                             JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
+                              JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
+                               JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
+#         self.joint_list = [JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
 #                             JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
-#                              JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
-#                               JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
-#                                JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)]
-        self.joint_list = [JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
-                            JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
-                             JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)]
+#                              JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)]
         
         
 #         parser = argparse.ArgumentParser()
@@ -571,7 +574,15 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
 #         args = parser.parse_args()
         
         self.change_order = rospy.ServiceProxy('/bento/configure_group', ConfigureGroup)
-#         self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
+        
+        if self.number_of_steps == 1:
+            self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
+        self.last_list = self.joint_list
+        
+        if self.last_list != self.joint_list:
+            self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
+            print 'JOINT LIST CHANGED'
+        
 #         self.change_order.call(group_idx=0, joints=self.joint_list, reset_idx=True)
 #         self.change_order.call(group_idx=0, joints=self.joint_list, reset_idx=args.reset)
 
