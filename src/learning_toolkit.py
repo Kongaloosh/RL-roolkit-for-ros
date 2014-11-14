@@ -257,7 +257,7 @@ class TDLambdaLearner(Learner):
         self.rlLambda = rlLambda
         self.rlGamma = rlGamma
     
-        self.mem_size = 512
+        self.mem_size = 2048
         self.prediction = None
         self.current_prediction = 0
         self.delta = 0
@@ -324,15 +324,15 @@ class TDLambdaLearner(Learner):
         self.loadFeatures(state, self.F)
         currentq = self.computeQ() # computeQ returns w*x' (current prediction)
         if self.lastS != None:
-            print 'reward = ' + str(reward)
+#             print 'reward = ' + str(reward)
             delta = reward + self.rlGamma*currentq - self.lastQ # delta = r + gamma*w*x' - w*x
             for i in self.traceH.getTraceIndices():
                 self.theta[i] += delta * (self.rlAlpha / self.numTilings) * self.traceH.getTrace(i) # delta * alpha/N * e
-                print 'traces = ' + str(self.traceH.getTrace(i))
+#                 print 'traces = ' + str(self.traceH.getTrace(i))
             self.traceH.decayTraces(self.rlGamma)
             self.traceH.replaceTraces(self.F)
 #             self.e_trace = min(rlLambda*self.e_trace + x, 1) # added by Ann
-            print 'delta = ' + str(delta)
+#             print 'delta = ' + str(delta)
 #             print 'trace indices = ' + str(self.traceH.getTraceIndices())
 #             print 'theta' + str(self.theta)
 #             print 'self.F'+ str(self.F)
@@ -359,7 +359,7 @@ class TDLambdaLearner(Learner):
 #         tiles(1,512,stateVars)
 #         active_tiles = loadtiles([0], 0, self.numTilings, self.num_bins, stateVars)
         self.F = active_tiles = tiles(self.numTilings,self.mem_size,stateVars)
-        print 'tiles = ' + str(active_tiles)
+#         print 'tiles = ' + str(active_tiles)
 #         active_tiles = simple_tiles(self.numTilings, self.numTilings*self.num_bins, stateVars)
 #         simple_tiles(self.numTilings, self.numTilings*self.num_bins, stateVars)
 #         print "featureVector " + str(len(self.theta))

@@ -77,13 +77,13 @@ class not_gripper(servo_info):
 class joint_activity(state):
     
     def __init__(self):
-        self.active_joint = None
-        self.switch = None
-        self.active_joint_normalized = None
+        self.group = None
+        self.joint_idx = None
+        self.joint_id = None
         
-    def update(self, active_joint, switch):
-        self.active_joint = active_joint
-        self.switch = switch
-        self.active_joint_normalized = float(self.active_joint)/5.0
+    def update(self, joint_group, joint_idx, joint_id):
+        self.joint_id = joint_id
+        self.joint_idx = joint_idx
+        self.group = joint_group
 
     

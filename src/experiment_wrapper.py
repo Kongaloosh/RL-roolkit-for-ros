@@ -2,6 +2,7 @@
 from experiment_state_information import *
 from learning_toolkit import *
 import rospy
+import rosdep2
 from std_msgs.msg import *
 from bento_controller.srv import *
 from bento_controller.msg import *
@@ -23,10 +24,32 @@ class experiment_wrapper(object):
         self.joint_activity_states.active_joint = 0
         self.joint_activity_states.switch = 0
         self.number_of_steps = 0
+        self.start_time = None
+        self.switch_count = 0
+        self.joint_list = [JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
+                            JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
+                             JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
+                              JointGroupJoint(joint_id=4, min_speed=0, max_speed=1),\
+                               JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
+        self.last_list = [JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
+                            JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
+                             JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
+                              JointGroupJoint(joint_id=4, min_speed=0, max_speed=1),\
+                               JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
+        self.temp1 = 0
+        self.temp2 = 0
         
     def step(self):
+        
         self.number_of_steps += 1
         print 'steps = ' + str(self.number_of_steps)
+        
+        if self.number_of_steps == 1:
+            self.start_time = rospy.get_rostime()
+        clock_time = rospy.get_rostime()
+        avg_step = (clock_time - self.start_time)/(self.number_of_steps*10**6)
+        print 'average step length = ' + str(avg_step) + ' ms'
+#         print 'start time = ' + str(self.start_time)
     
     def update_perception(self, gripper_states, wrist_flexion_states,\
                            wrist_rotation_states, shoulder_rotation_states,\
@@ -285,12 +308,12 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         """ Instantiate a separate TD Lambda Learner for each joint:
             TDLambdaLearner(numTilings, num_bins, alpha, lambda, gamma, cTableSize) """
-        self.td0 = TDLambdaLearner(8,128,0.01,0.999,0.99,64) # TDLambda Hand
-#         self.td1 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Wrist Rotation
-        self.td2 = TDLambdaLearner(8,128,0.01,0.999,0.9,64) # TDLambda Wrist Flexion
-#         self.td3 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Elbow
-#         self.td4 = TDLambdaLearner(1,16,0.01,0.999,0.99,64) # TDLambda Shoulder
-#         self.td_switch = TDLambdaLearner(1,16,0.1,0.9,0.99,64) # 'When' prediction learner
+        self.td0 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Hand
+        self.td1 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Wrist Rotation
+        self.td2 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Wrist Flexion
+        self.td3 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Elbow
+        self.td4 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Shoulder
+        self.td_switch = TDLambdaLearner(8,32,0.01,0.9,0.99,64) # 'When' prediction learner
 #         self.td = self.learner # not really used
         
         self.active_joint_holder = None
@@ -303,26 +326,27 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         self.trace_shoulder = 0
         
         """ Names and types of publishers """
-        self.publisher_learner_gripper = rospy.Publisher('/Agent_Prediction_Gripper', Float32, queue_size = 10)
-        self.publisher_return_gripper = rospy.Publisher('/Agent_Return_Gripper', Float32, queue_size = 10)
-        self.publisher_reward_gripper = rospy.Publisher('/Agent_Reward_Gripper', Float32, queue_size = 10)
-        self.publisher_learner_wrist_rotation = rospy.Publisher('/Agent_Prediction_WristRotation', Float32, queue_size = 10)
-        self.publisher_return_wrist_rotation = rospy.Publisher('/Agent_Return_WristRotation', Float32, queue_size = 10)
-        self.publisher_reward_wrist_rotation = rospy.Publisher('/Agent_Reward_WristRotation', Float32, queue_size = 10)
-        self.publisher_learner_wrist_flex = rospy.Publisher('/Agent_Prediction_WristFlex', Float32, queue_size = 10)
-        self.publisher_return_wrist_flex = rospy.Publisher('/Agent_Return_WristFlex', Float32, queue_size = 10)
-        self.publisher_reward_wrist_flex = rospy.Publisher('/Agent_Reward_WristFlex', Float32, queue_size = 10)
-        self.publisher_learner_elbow = rospy.Publisher('/Agent_Prediction_Elbow', Float32, queue_size = 10)
-        self.publisher_return_elbow = rospy.Publisher('/Agent_Return_Elbow', Float32, queue_size = 10)
-        self.publisher_reward_elbow = rospy.Publisher('/Agent_Reward_Elbow', Float32, queue_size = 10)
-        self.publisher_learner_shoulder = rospy.Publisher('/Agent_Prediction_Shoulder', Float32, queue_size = 10)
-        self.publisher_return_shoulder = rospy.Publisher('/Agent_Return_Shoulder', Float32, queue_size = 10)
-        self.publisher_reward_shoulder = rospy.Publisher('/Agent_Reward_Shoulder', Float32, queue_size = 10)
-        self.publisher_learner_switch = rospy.Publisher('/Agent_Prediction_Switch', Float32, queue_size = 10)
-        self.publisher_return_switch = rospy.Publisher('/Agent_Return_Switch', Float32, queue_size = 10)
-        self.publisher_reward_switch = rospy.Publisher('/Agent_Reward_Switch', Float32, queue_size = 10)
-        self.publisher_joint_order = rospy.Publisher('/Joint_Order', Float32, queue_size = 10)
+        self.publisher_learner_gripper = rospy.Publisher('/agents/prediction_gripper', Float32, queue_size = 10)
+        self.publisher_return_gripper = rospy.Publisher('/agents/return_gripper', Float32, queue_size = 10)
+        self.publisher_reward_gripper = rospy.Publisher('/agents/reward_gripper', Float32, queue_size = 10)
+        self.publisher_learner_wrist_rotation = rospy.Publisher('/agents/prediction_wrist_rotation', Float32, queue_size = 10)
+        self.publisher_return_wrist_rotation = rospy.Publisher('/agents/return_wrist_rotation', Float32, queue_size = 10)
+        self.publisher_reward_wrist_rotation = rospy.Publisher('/agents/reward_wrist_rotation', Float32, queue_size = 10)
+        self.publisher_learner_wrist_flex = rospy.Publisher('/agents/prediction_wrist_flex', Float32, queue_size = 10)
+        self.publisher_return_wrist_flex = rospy.Publisher('/agents/return_wrist_flex', Float32, queue_size = 10)
+        self.publisher_reward_wrist_flex = rospy.Publisher('/agents/reward_wrist_flex', Float32, queue_size = 10)
+        self.publisher_learner_elbow = rospy.Publisher('/agents/prediction_elbow', Float32, queue_size = 10)
+        self.publisher_return_elbow = rospy.Publisher('/agents/return_elbow', Float32, queue_size = 10)
+        self.publisher_reward_elbow = rospy.Publisher('/agents/reward_elbow', Float32, queue_size = 10)
+        self.publisher_learner_shoulder = rospy.Publisher('/agents/prediction_shoulder', Float32, queue_size = 10)
+        self.publisher_return_shoulder = rospy.Publisher('/agents/return_shoulder', Float32, queue_size = 10)
+        self.publisher_reward_shoulder = rospy.Publisher('/agents/reward_shoulder', Float32, queue_size = 10)
+        self.publisher_learner_switch = rospy.Publisher('/agents/prediction_switch', Float32, queue_size = 10)
+        self.publisher_return_switch = rospy.Publisher('/agents/return_switch', Float32, queue_size = 10)
+        self.publisher_reward_switch = rospy.Publisher('/agents/reward_switch', Float32, queue_size = 10)
+        self.publisher_joint_order = rospy.Publisher('/joint_order', Float32, queue_size = 10)
 #         self.publisher_learner2_shoulder = rospy.Publisher('/Agent_Predict_Shoulder', Float32, queue_size = 10)
+        self.publisher_switch_count = rospy.Publisher('/switch_count', Float32, queue_size = 10)
     
     def update_perception(self, gripper_states, wrist_flexion_states, 
         wrist_rotation_states, shoulder_rotation_states, 
@@ -343,11 +367,13 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         
         """ Setting up the switch signal """
-        if (self.active_joint_holder != self.joint_activity_states.active_joint):
+        if (self.active_joint_holder != self.joint_activity_states.joint_id):
             self.switch_flag = 1 
         else:
             self.switch_flag = 0 
-        self.active_joint_holder = self.joint_activity_states.active_joint                            
+        self.active_joint_holder = self.joint_activity_states.joint_id      
+        print 'joint id = ' + str(self.joint_activity_states.joint_id)  
+        print 'switch flag = ' + str(self.switch_flag)                    
             
         """ Is the arm moving? """
         if (numpy.absolute(self.gripper_states.velocity) > 0.1 or\
@@ -362,15 +388,18 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         """ switched = 1 if the user has switched and not yet moved the arm """
         if (self.switch_flag == 1):
             self.switched = 1
+            self.switch_count += 1
         self.switched = self.switched
         if (self.moving == 1):
             self.switched = 0
+        print 'switched? ' + str(self.switched)
             
         """ moved = 1 if the user has moved the arm but not yet switched to a new joint """     
         if (self.switched == 1):
             self.moved = 0
         elif (self.switched == 0):
             self.moved = 1
+        print 'switch count = ' + str(self.switch_count)
         
         """ Traces of joint movement """    
         if (numpy.absolute(self.gripper_states.velocity) > 0.1):
@@ -411,26 +440,21 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
                                  self.gripper_states.normalized_position*16,\
                                    (self.gripper_states.velocity+1.5)*16/4]
         self.numstates_joints = len(state_joints)
-#         print "len = " + str(self.numstates_joints)
+
         
         """ Defines the state for the switch signal -- includes velocity, position, and traces """
-        state_switch = [self.shoulder_rotation_states.normalized_position]
+#         state_switch = [self.shoulder_rotation_states.normalized_position]
         
-#         state_switch = [self.shoulder_rotation_states.normalized_position,\
-#                    (self.shoulder_rotation_states.velocity+2)/2,\
-#                      self.elbow_flexion_states.normalized_position,\
-#                        (self.elbow_flexion_states.velocity+2)/2,\
-#                          self.wrist_rotation_states.normalized_position,\
-#                            (self.wrist_rotation_states.velocity+2)/2,\
-#                              self.wrist_flexion_states.normalized_position,\
-#                                (self.wrist_flexion_states.velocity+2)/2,\
-#                                  self.gripper_states.normalized_position,\
-#                                    (self.gripper_states.velocity+2)/2,\
-#                                       self.trace_gripper,\
-#                                         self.trace_wrist_rotation,\
-#                                           self.trace_wrist_flex,\
-#                                             self.trace_elbow,\
-#                                               self.trace_shoulder]
+        state_switch = [self.shoulder_rotation_states.normalized_position*16,\
+                   (self.shoulder_rotation_states.velocity+1.5)*16/4,\
+                     self.elbow_flexion_states.normalized_position*16,\
+                       (self.elbow_flexion_states.velocity+1.5)*16/4,\
+                         self.wrist_rotation_states.normalized_position*16,\
+                           (self.wrist_rotation_states.velocity+1.5)*16/4,\
+                             self.wrist_flexion_states.normalized_position*16,\
+                               (self.wrist_flexion_states.velocity+1.5)*16/4,\
+                                 self.gripper_states.normalized_position*16,\
+                                   (self.gripper_states.velocity+1.5)*16/4]
         
         """ Defines the reward for each joint. Reward equals 1 when current joint velocity > 0.1 """
         if (self.shoulder_rotation_states.normalized_position == None or\
@@ -466,158 +490,227 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         """ Updates to the td learners """
 #             self.td.update(state_joints, reward_joints) # not really used
         self.td0.update(state_joints, reward_joints[0])
-#         self.td1.Ann_update(state_joints, reward_joints[1])
-#         self.td2.Ann_update(state_joints, self.numstates_joints, reward_joints[2])
+        self.td1.update(state_joints, reward_joints[1])
+#         self.td2.update(state_joints, self.numstates_joints, reward_joints[2])
         self.td2.update(state_joints, reward_joints[2])
-#         self.td3.Ann_update(state_joints, reward_joints[3])
-#         self.td4.Ann_update(state_joints, reward_joints[4])
-#         self.td_switch.Ann_update(state_switch, reward_switch)
+        self.td3.update(state_joints, reward_joints[3])
+        self.td4.update(state_joints, reward_joints[4])
+        self.td_switch.update(state_switch, reward_switch)
         
         """ Publish reward for each joint """
         self.publisher_reward_gripper.publish(reward_joints[0])
-#         self.publisher_reward_wrist_rotation.publish(reward_joints[1])
+        self.publisher_reward_wrist_rotation.publish(reward_joints[1])
         self.publisher_reward_wrist_flex.publish(reward_joints[2])
-#         self.publisher_reward_elbow.publish(reward_joints[3])
-#         self.publisher_reward_shoulder.publish(reward_joints[4])
-#         self.publisher_reward_switch.publish(reward_switch)
+        self.publisher_reward_elbow.publish(reward_joints[3])
+        self.publisher_reward_shoulder.publish(reward_joints[4])
+        self.publisher_reward_switch.publish(reward_switch)
         
         """ Publish prediction for each joint """
         self.publisher_learner_gripper.publish(self.td0.prediction)
-#         self.publisher_learner_wrist_rotation.publish(self.td1.prediction)
+        self.publisher_learner_wrist_rotation.publish(self.td1.prediction)
         self.publisher_learner_wrist_flex.publish(self.td2.prediction) # change this to self.td2.current_prediction for my learner
-#         self.publisher_learner_elbow.publish(self.td3.prediction)
-#         self.publisher_learner_shoulder.publish(self.td4.prediction)
-#         self.publisher_learner_switch.publish(self.td_switch.prediction)
+        self.publisher_learner_elbow.publish(self.td3.prediction)
+        self.publisher_learner_shoulder.publish(self.td4.prediction)
+        self.publisher_learner_switch.publish(self.td_switch.prediction)
 
         """ Publish return for each joint """
         if self.td2.verifier.calculateReturn() != None :
             self.publisher_return_gripper.publish(self.td0.verifier.calculateReturn())
-#             self.publisher_return_wrist_rotation.publish(self.td1.verifier.calculateReturn())
+            self.publisher_return_wrist_rotation.publish(self.td1.verifier.calculateReturn())
             self.publisher_return_wrist_flex.publish(self.td2.verifier.calculateReturn())
-#             self.publisher_return_elbow.publish(self.td3.verifier.calculateReturn())
-#             self.publisher_return_shoulder.publish(self.td4.verifier.calculateReturn())
-#             self.publisher_return_switch.publish(self.td_switch.verifier.calculateReturn())
+            self.publisher_return_elbow.publish(self.td3.verifier.calculateReturn())
+            self.publisher_return_shoulder.publish(self.td4.verifier.calculateReturn())
+            self.publisher_return_switch.publish(self.td_switch.verifier.calculateReturn())
         
         """ Prediction for each of the joints. The currently active joint must not be 
             the highest prediction; set the active joint prediction value to -1 """
-#         if (self.joint_activity_states.active_joint == 1): # i.e. shoulder
-#             self.shoulder_prediction = -1.0
-#         else:
-#             self.shoulder_prediction = self.td4.predict(state_joints)
-#         if (self.joint_activity_states.active_joint == 2): # i.e. elbow
-#             self.elbow_prediction = -1.0
-#         else:
-#             self.elbow_prediction = self.td3.predict(state_joints)
-#         if (self.joint_activity_states.active_joint == 3): # i.e. wrist rotation
-#             self.wrist_rotation_prediction = -1.0
-#         else:
-#             self.wrist_rotation_prediction = self.td1.predict(state_joints)
-        if (self.joint_activity_states.active_joint == 4): # i.e. wrist flexion
+        if (self.joint_activity_states.joint_id == 1): # i.e. shoulder
+            self.shoulder_prediction = -1.0
+        else:
+            self.shoulder_prediction = self.td4.prediction
+        if (self.joint_activity_states.joint_id == 2): # i.e. elbow
+            self.elbow_prediction = -1.0
+        else:
+            self.elbow_prediction = self.td3.prediction
+        if (self.joint_activity_states.joint_id == 3): # i.e. wrist rotation
+            self.wrist_rotation_prediction = -1.0
+        else:
+            self.wrist_rotation_prediction = self.td1.prediction
+        if (self.joint_activity_states.joint_id == 4): # i.e. wrist flexion
             self.wrist_flexion_prediction = -1.0
         else:
-            self.wrist_flexion_prediction = self.td2.predict(state_joints)
-        if (self.joint_activity_states.active_joint == 5): # i.e. gripper
+            self.wrist_flexion_prediction = self.td2.prediction
+        if (self.joint_activity_states.joint_id == 5): # i.e. gripper
             self.hand_prediction = -1.0
         else:
-            self.hand_prediction = self.td0.predict(state_joints)
-#         self.switch_prediction = self.td_switch.predict(state_switch)
+            self.hand_prediction = self.td0.prediction
+        self.switch_prediction = self.td_switch.prediction
         
+        print 'active joint = ' + str(self.joint_activity_states.joint_id)
+        
+        
+        """ List of joints and their respective prediction values """
+        self.joint_predictions = [(self.shoulder_prediction, 'shoulder'),(self.elbow_prediction, 'elbow'),\
+                                  (self.wrist_flexion_prediction, 'wrist flex'),(self.wrist_rotation_prediction, 'wrist rotation'),\
+                                  (self.hand_prediction, 'gripper')]
+
+
+        """ Sort joints in joint_predictions based on lowest to highest prediction value """
+        self.dtype = [('prediction', float),('joint', 'S10')] # data types in prediction array; used for sorting
+        self.joint_order = numpy.array(self.joint_predictions, dtype=self.dtype) # list of joints and their respective predictions
+        self.sorted_joints = numpy.sort(self.joint_order,order='prediction') # sorted array of joints (low to high)           
+        print 'sorted joints = ' + str(self.sorted_joints)
+           
         
         
         """ List of joints can only adapt after the arm has moved again """
-        if (self.moved == 1):    
+        if (self.moved == 1) and (self.switch_count >= 1):    
             self.adaptation = True
         else:
             self.adaptation = False
-                
+        print 'moved? ' + str(self.moved)
+        print 'adaptation enabled = ' + str(self.adaptation)
+        
+      
+        
+#         print 'a = ' + str(self.last_list)
+#         print 'A = ' + str(self.joint_list)
+        self.new_list = self.last_list
+        print 'new new list ' + str(self.new_list)
+        
+        
+        """ joint_list is the ordered list formatted to send to the bento arm """
+        if (self.sorted_joints[4][1] == 'shoulder'):
+            self.last_list[0] = self.joint_list[0]
+            self.joint_list[0] = JointGroupJoint(joint_id=1, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[3][1] == 'shoulder'):
+            self.last_list[1] = self.joint_list[1]
+            self.joint_list[1] = JointGroupJoint(joint_id=1, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[2][1] == 'shoulder'):
+            self.last_list[2] = self.joint_list[2]
+            self.joint_list[2] = JointGroupJoint(joint_id=1, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[1][1] == 'shoulder'):
+            self.last_list[3] = self.joint_list[3]
+            self.joint_list[3] = JointGroupJoint(joint_id=1, min_speed=0, max_speed=1)
+        else:
+            self.last_list[4] = self.joint_list[4]
+            self.joint_list[4] = JointGroupJoint(joint_id=1, min_speed=0, max_speed=1)
+                 
+        if (self.sorted_joints[4][1] == 'elbow'):
+            self.last_list[0] = self.joint_list[0]
+            self.joint_list[0] = JointGroupJoint(joint_id=2, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[3][1] == 'elbow'):
+            self.last_list[1] = self.joint_list[1]
+            self.joint_list[1] = JointGroupJoint(joint_id=2, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[2][1] == 'elbow'):
+            self.last_list[2] = self.joint_list[2]
+            self.joint_list[2] = JointGroupJoint(joint_id=2, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[1][1] == 'elbow'):
+            self.last_list[3] = self.joint_list[3]
+            self.joint_list[3] = JointGroupJoint(joint_id=2, min_speed=0, max_speed=1)
+        else:
+            self.last_list[4] = self.joint_list[4]
+            self.joint_list[4] = JointGroupJoint(joint_id=2, min_speed=0, max_speed=1)
+             
+        if (self.sorted_joints[4][1] == 'wrist rota'):
+            self.last_list[0] = self.joint_list[0]
+            self.joint_list[0] = JointGroupJoint(joint_id=3, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[3][1] == 'wrist rota'):
+            self.last_list[1] = self.joint_list[1]
+            self.joint_list[1] = JointGroupJoint(joint_id=3, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[2][1] == 'wrist rota'):
+            self.last_list[2] = self.joint_list[2]
+            self.joint_list[2] = JointGroupJoint(joint_id=3, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[1][1] == 'wrist rota'):
+            self.last_list[3] = self.joint_list[3]
+            self.joint_list[3] = JointGroupJoint(joint_id=3, min_speed=0, max_speed=1)
+        else:
+            self.last_list[4] = self.joint_list[4]
+            self.joint_list[4] = JointGroupJoint(joint_id=3, min_speed=0, max_speed=1)
+             
+        if (self.sorted_joints[4][1] == 'wrist flex'):
+            self.last_list[0] = self.joint_list[0]
+            self.joint_list[0] = JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[3][1] == 'wrist flex'):
+            self.last_list[1] = self.joint_list[1]
+            self.joint_list[1] = JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[2][1] == 'wrist flex'):
+            self.last_list[2] = self.joint_list[2]
+            self.joint_list[2] = JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[1][1] == 'wrist flex'):
+            self.last_list[3] = self.joint_list[3]
+            self.joint_list[3] = JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)
+        else:
+            self.last_list[4] = self.joint_list[4]
+            self.joint_list[4] = JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)
+             
+        if (self.sorted_joints[4][1] == 'gripper'):
+            self.last_list[0] = self.joint_list[0]
+            self.joint_list[0] = JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[3][1] == 'gripper'):
+            self.last_list[1] = self.joint_list[1]
+            self.joint_list[1] = JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[2][1] == 'gripper'):
+            self.last_list[2] = self.joint_list[2]
+            self.joint_list[2] = JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)
+        elif (self.sorted_joints[1][1] == 'gripper'):
+            self.last_list[3] = self.joint_list[3]
+            self.joint_list[3] = JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)
+        else:
+            self.last_list[4] = self.joint_list[4]
+            self.joint_list[4] = JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)  
+        
+#         print 'joint_list ' + str(self.joint_list)
+#         print 'last_list ' + str(self.last_list)
+        
+        print 'new list ' + str(self.new_list) # by the time it gets here, new_list has somehow changed to be equal to joint_list?!
+        print 'joint list ' + str(self.joint_list)
+        
+        if (self.new_list != self.joint_list):
+#             self.change_order = rospy.ServiceProxy('/bento/configure_group', ConfigureGroup)
+#             self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
+            print 'JOINT LIST CHANGED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
             
-                                                          
-#         print '======== Predictions: ========'
-#             print 'Hand = ' + str(self.hand_prediction) 
-#             print 'Wrist rotation = ' + str(self.wrist_rotation_prediction)
-#             print 'Wrist flexion = ' + str(self.wrist_flexion_prediction)
-#             print 'Elbow = ' + str(self.elbow_prediction)
-#             print 'Shoulder = ' + str(self.shoulder_prediction)
-#             print 'Switch = ' + str(self.switch_prediction)
-#         print '=============================='
-        print "wrist flex verifier = " + str(self.td2.verifier.calculateReturn()) 
-#         print "shoulder prediction = " + str(self.td4.prediction)
-        print "wrist flex prediction = " + str(self.td2.prediction) # change this to self.td2.current_prediction for using my learner
-#         print "gripper position = " + str(self.gripper_states.normalized_position)
-        print "wristflex position = " + str(self.wrist_flexion_states.normalized_position)
-#         print "wristrotate position = " + str(self.wrist_rotation_states.normalized_position)
-#         print "elbow position = " + str(self.elbow_flexion_states.normalized_position)
-#         print "shoulder position = " + str(self.shoulder_rotation_states.normalized_position)
-#         print "active joint = " + str(self.joint_activity_states.active_joint)   
-#         print "switch signal = " + str(self.switch_flag) 
-#         print "switched = " + str(self.switched)
-#         print "moving = " + str(self.moving)
-#         print "shoulder velocity = " + str((self.shoulder_rotation_states.velocity+1.5)/4)
-#         print "state joints = " + str(state_joints)
+#         self.last_list = self.joint_list
+        
+#         print 'joint_list ' + str(self.joint_list)
+#         print 'last_list ' + str(self.last_list)
+#         print '4th ' + str(self.joint_list[4])
         
         
+#         self.temp1 += 1
+#         if self.temp1 != self.temp2:
+#             print 'AAAAAAAAAAAAARRRRRRRRRRRGGGGGGGGGGGGGGGGHHHHHHHHHH'
+#         self.temp2 = self.temp1
         
-        self.joint_list = [JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
-                            JointGroupJoint(joint_id=4, min_speed=0, max_speed=1),\
-                             JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
-                              JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
-                               JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
-#         self.joint_list = [JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
-#                             JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
-#                              JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)]
+#         """ List of joints can only adapt after the arm has moved again """
+#         if (self.moved == 1) and (self.switch_count >= 1):    
+#             self.adaptation = True
+#         else:
+#             self.adaptation = False
+#         print 'moved? ' + str(self.moved)
+#         print 'adaptation enabled = ' + str(self.adaptation)
+        
+#         self.joint_list = [JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
+#                             JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
+#                              JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
+#                               JointGroupJoint(joint_id=4, min_speed=0, max_speed=1),\
+#                                JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
         
         
-#         parser = argparse.ArgumentParser()
-#         parser.add_argument('which', type=int, help='')
-#         parser.add_argument('--reset', dest="reset", action="store_true")
-#         parser.set_defaults(reset=False)
-#         args = parser.parse_args()
+     
         
-        self.change_order = rospy.ServiceProxy('/bento/configure_group', ConfigureGroup)
+#         
+#         if (self.adaptation == True and self.last_list != self.joint_list):
+#             self.change_order = rospy.ServiceProxy('/bento/configure_group', ConfigureGroup)
+#             self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
+#             print 'JOINT LIST CHANGED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
         
-        if self.number_of_steps == 1:
-            self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
-        self.last_list = self.joint_list
         
-        if self.last_list != self.joint_list:
-            self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
-            print 'JOINT LIST CHANGED'
-        
-#         self.change_order.call(group_idx=0, joints=self.joint_list, reset_idx=True)
-#         self.change_order.call(group_idx=0, joints=self.joint_list, reset_idx=args.reset)
 
-#         self.trigger = pyqtSignal()
-#         self.trigger.emit()
-            
-""" Sourced from http://pyqt.sourceforge.net/Docs/PyQt4/new_style_signals_slots.html """ 
-# class Foo(QObject):
-# 
-#     # Define a new signal called 'trigger' that has no arguments.
-#     trigger = pyqtSignal()
-# 
-#     def connect_and_emit_trigger(self):
-#         # Connect the trigger signal to a slot.
-#         self.trigger.connect(self.handle_trigger)
-#         # Emit the signal.
-#         self.trigger.emit()
-# 
-#     def handle_trigger(self):
-#         # Show that the slot has been called.
-#         print "trigger signal received"
-#             
-            
-            
-            
-#             self.change_order(1,'test',['shoulder rotation','elbow_flexion','wrist_rotation','wrist_flexion','gripper'])
-#             self.joint_list = [JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
-#                                 JointGroupJoint(joint_id=5, min_speed=0, max_speed=1),\
-#                                  JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
-#                                   JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
-#                                    JointGroupJoint(joint_id=4, min_speed=0, max_speed=1)]
-#             print "configure_group = " + str(self.change_order(group_idx = 0, joints = self.joint_list))
-
-#             prx = rospy.ServiceProxy("/bento/configure_group", ConfigureGroup)
-#             self.change_order.call(group_idx = 0, joints = self.joint_list)
+        """ Publish other things that might be needed for post-processing """
+        self.publisher_switch_count.publish(self.switch_count)
+                    
  
  
 #             if (self.switch_flag == 1):
@@ -631,73 +724,6 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
 #                     self.adaptation_enabled = 1
                      
             
-#             """ Sort joints in joint_predictions based on lowest to highest prediction value """
-#             self.dtype = [('prediction', float),('joint', 'S10')] # data types in prediction array; used for sorting
-#             self.joint_order = numpy.array(self.joint_predictions, dtype=self.dtype) # list of joints and their respective predictions
-#             self.sorted_joints = numpy.sort(self.joint_order,order='prediction') # sorted array of joints (low to high)           
-            #print self.sorted_joints
-            
-#             """ bento_joints is the relative position of shoulder, elbow, wrist rotation, 
-#                 wrist flexion, and hand in the list of predictions; i.e. if shoulder is 
-#                 the 3rd highest prediction, bento_joints[0] will equal 3 """
-#             self.bento_joints = [0]*5
-#             
-#             if (self.sorted_joints[4][1] == 'Shoulder'):
-#                 self.bento_joints[0] = 1
-#             elif (self.sorted_joints[3][1] == 'Shoulder'):
-#                 self.bento_joints[0] = 2
-#             elif (self.sorted_joints[2][1] == 'Shoulder'):
-#                 self.bento_joints[0] = 3
-#             elif (self.sorted_joints[1][1] == 'Shoulder'):
-#                 self.bento_joints[0] = 4
-#             else:
-#                 self.bento_joints[0] = 5
-#                 
-#             if (self.sorted_joints[4][1] == 'Elbow'):
-#                 self.bento_joints[1] = 1
-#             elif (self.sorted_joints[3][1] == 'Elbow'):
-#                 self.bento_joints[1] = 2
-#             elif (self.sorted_joints[2][1] == 'Elbow'):
-#                 self.bento_joints[1] = 3
-#             elif (self.sorted_joints[1][1] == 'Elbow'):
-#                 self.bento_joints[1] = 4
-#             else:
-#                 self.bento_joints[1] = 5
-#                 
-#             if (self.sorted_joints[4][1] == 'Wrist_Rota'):
-#                 self.bento_joints[2] = 1
-#             elif (self.sorted_joints[3][1] == 'Wrist_Rota'):
-#                 self.bento_joints[2] = 2
-#             elif (self.sorted_joints[2][1] == 'Wrist_Rota'):
-#                 self.bento_joints[2] = 3
-#             elif (self.sorted_joints[1][1] == 'Wrist_Rota'):
-#                 self.bento_joints[2] = 4
-#             else:
-#                 self.bento_joints[2] = 5
-#                 
-#             if (self.sorted_joints[4][1] == 'Wrist_Flex'):
-#                 self.bento_joints[3] = 1
-#             elif (self.sorted_joints[3][1] == 'Wrist_Flex'):
-#                 self.bento_joints[3] = 2
-#             elif (self.sorted_joints[2][1] == 'Wrist_Flex'):
-#                 self.bento_joints[3] = 3
-#             elif (self.sorted_joints[1][1] == 'Wrist_Flex'):
-#                 self.bento_joints[3] = 4
-#             else:
-#                 self.bento_joints[3] = 5
-#                 
-#             if (self.sorted_joints[4][1] == 'Hand'):
-#                 self.bento_joints[4] = 1
-#             elif (self.sorted_joints[3][1] == 'Hand'):
-#                 self.bento_joints[4] = 2
-#             elif (self.sorted_joints[2][1] == 'Hand'):
-#                 self.bento_joints[4] = 3
-#             elif (self.sorted_joints[1][1] == 'Hand'):
-#                 self.bento_joints[4] = 4
-#             else:
-#                 self.bento_joints[4] = 5   
-#                 
-#             print self.bento_joints
             
                         
         

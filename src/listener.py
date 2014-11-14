@@ -5,7 +5,7 @@ import message_filters
 from experiment_wrapper import *
 from experiment_state_information import *
 from learning_toolkit import *
-from bento_controller.msg import MotorSelection
+from bento_controller.msg import JointSelection
 from bento_controller.srv import *
 from dynamixel_msgs.msg import JointState
 from learning.msg import Learner_Information
@@ -32,7 +32,7 @@ class LearnerNode():
         self.currentMessages = list()
         
     def _selected_motor_callback(self, msg):
-        self.joint_activity_state.update(msg.motor_id, msg.motor_idx)
+        self.joint_activity_state.update(msg.joint_group, msg.joint_idx, msg.joint_id)
     
     def _motor_state_callback(self, msg):
         """This is bad code and I feel bad; I am sorry."""
@@ -54,7 +54,7 @@ class LearnerNode():
         
     def listener(self):
         rospy.init_node('listener', anonymous=True)
-        rospy.Subscriber('/bento/selected_motor', MotorSelection, self._selected_motor_callback)
+        rospy.Subscriber('/bento/selected_joint', JointSelection, self._selected_motor_callback)
         rospy.Subscriber('/bento_controller/dynamixel/wrist_rotation/state', JointState, self._motor_state_callback)
         rospy.Subscriber('/bento_controller/dynamixel/wrist_flexion/state', JointState, self._motor_state_callback)
         rospy.Subscriber('/bento_controller/dynamixel/shoulder_rotation/state', JointState, self._motor_state_callback)
@@ -64,7 +64,7 @@ class LearnerNode():
         
         r = rospy.Rate(10) #10hz
         while not rospy.is_shutdown(): 
-            print '==========================='
+            print '=================================='
             print 'Time: ' + str(rospy.get_rostime())
             self.experiment.update_perception(self.gripper_state, self.wrist_flexion_state,\
                        self.wrist_rotation_state, self.shoulder_rotation_state,\
