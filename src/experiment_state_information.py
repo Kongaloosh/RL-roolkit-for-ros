@@ -47,7 +47,7 @@ class gripper(servo_info):
     def update(self, position, load, velocity, is_moving):
         servo_info.update(self, position, load, velocity, is_moving)
         self.normalized_position = float(self.position)/1023.0
-        self.normalized_load = float(self.load+1)/2.0
+        self.normalized_load = float(self.load+0.56)*1.35
         self.normalized_velocity = None
 
 class not_gripper(servo_info):

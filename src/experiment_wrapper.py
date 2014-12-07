@@ -36,8 +36,8 @@ class experiment_wrapper(object):
                              JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
                               JointGroupJoint(joint_id=4, min_speed=0, max_speed=1),\
                                JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
-        self.temp1 = 0
-        self.temp2 = 0
+        self.max_gripper_load = -1000
+        self.min_gripper_load = 1000
         
     def step(self):
         
@@ -308,12 +308,12 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         """ Instantiate a separate TD Lambda Learner for each joint:
             TDLambdaLearner(numTilings, num_bins, alpha, lambda, gamma, cTableSize) """
-        self.td0 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Hand
-        self.td1 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Wrist Rotation
-        self.td2 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Wrist Flexion
-        self.td3 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Elbow
-        self.td4 = TDLambdaLearner(8,32,0.01,0.999,0.9,64) # TDLambda Shoulder
-        self.td_switch = TDLambdaLearner(8,32,0.01,0.9,0.99,64) # 'When' prediction learner
+        self.td0 = TDLambdaLearner(4,64,0.01,0.99,0.9,64) # TDLambda Hand
+        self.td1 = TDLambdaLearner(4,64,0.01,0.99,0.9,64) # TDLambda Wrist Rotation
+        self.td2 = TDLambdaLearner(4,64,0.01,0.99,0.9,64) # TDLambda Wrist Flexion
+        self.td3 = TDLambdaLearner(4,64,0.01,0.99,0.9,64) # TDLambda Elbow
+        self.td4 = TDLambdaLearner(4,64,0.01,0.99,0.9,64) # TDLambda Shoulder
+        self.td_switch = TDLambdaLearner(4,64,0.1,0.99,0.9,64) # 'When' prediction learner
 #         self.td = self.learner # not really used
         
         self.active_joint_holder = None
@@ -324,6 +324,11 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         self.trace_wrist_flex = 0
         self.trace_elbow = 0
         self.trace_shoulder = 0
+        self.long_trace_gripper = 0
+        self.long_trace_wrist_rotation = 0
+        self.long_trace_wrist_flex = 0
+        self.long_trace_elbow = 0
+        self.long_trace_shoulder = 0
         
         """ Names and types of publishers """
         self.publisher_learner_gripper = rospy.Publisher('/agents/prediction_gripper', Float32, queue_size = 10)
@@ -344,9 +349,16 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         self.publisher_learner_switch = rospy.Publisher('/agents/prediction_switch', Float32, queue_size = 10)
         self.publisher_return_switch = rospy.Publisher('/agents/return_switch', Float32, queue_size = 10)
         self.publisher_reward_switch = rospy.Publisher('/agents/reward_switch', Float32, queue_size = 10)
-        self.publisher_joint_order = rospy.Publisher('/joint_order', Float32, queue_size = 10)
+#         self.publisher_joint_order = rospy.Publisher('/joint_order', Float32, queue_size = 10)
 #         self.publisher_learner2_shoulder = rospy.Publisher('/Agent_Predict_Shoulder', Float32, queue_size = 10)
         self.publisher_switch_count = rospy.Publisher('/switch_count', Float32, queue_size = 10)
+        self.publisher_adaptation = rospy.Publisher('/adaptation', Float32, queue_size = 10)
+#         self.publisher_joint_ids = rospy.Publisher('/joint_ids', tuple(1), queue_size = 10)
+        self.publisher_id1 = rospy.Publisher('/joint_order/id1', Float32, queue_size = 10)
+        self.publisher_id2 = rospy.Publisher('/joint_order/id2', Float32, queue_size = 10)
+        self.publisher_id3 = rospy.Publisher('/joint_order/id3', Float32, queue_size = 10)
+        self.publisher_id4 = rospy.Publisher('/joint_order/id4', Float32, queue_size = 10)
+        self.publisher_id5 = rospy.Publisher('/joint_order/id5', Float32, queue_size = 10)
     
     def update_perception(self, gripper_states, wrist_flexion_states, 
         wrist_rotation_states, shoulder_rotation_states, 
@@ -401,7 +413,7 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
             self.moved = 1
         print 'switch count = ' + str(self.switch_count)
         
-        """ Traces of joint movement """    
+        """ Short traces of joint movement """    
         if (numpy.absolute(self.gripper_states.velocity) > 0.1):
             self.trace_gripper = 1
         else:
@@ -422,39 +434,95 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
             self.trace_shoulder = 1
         else:
             self.trace_shoulder = self.trace_shoulder * 0.99
-        
+        """ Long traces of joint movement """    
+        if (numpy.absolute(self.gripper_states.velocity) > 0.1):
+            self.long_trace_gripper = 1
+        else:
+            self.long_trace_gripper = self.trace_gripper * 0.999
+        if (numpy.absolute(self.wrist_rotation_states.velocity) > 0.1):
+            self.long_trace_wrist_rotation = 1
+        else:
+            self.long_trace_wrist_rotation = self.trace_wrist_rotation * 0.999
+        if (numpy.absolute(self.wrist_flexion_states.velocity) > 0.1):
+            self.long_trace_wrist_flex = 1
+        else:
+            self.long_trace_wrist_flex = self.trace_wrist_flex * 0.999
+        if (numpy.absolute(self.elbow_flexion_states.velocity) > 0.1):
+            self.long_trace_elbow = 1
+        else:
+            self.long_trace_elbow = self.trace_elbow * 0.999
+        if (numpy.absolute(self.shoulder_rotation_states.velocity) > 0.1):
+            self.long_trace_shoulder = 1
+        else:
+            self.long_trace_shoulder = self.trace_shoulder * 0.999
         
         """ Defines the state for joint predictions. Includes current position and 
             velocity for all 5 joints. """
+        norm_const = 10
 #         state_joints = [(self.shoulder_rotation_states.normalized_position)*16]
         
         
-        state_joints = [self.shoulder_rotation_states.normalized_position*16,\
-                   (self.shoulder_rotation_states.velocity+1.5)*16/4,\
-                     self.elbow_flexion_states.normalized_position*16,\
-                       (self.elbow_flexion_states.velocity+1.5)*16/4,\
-                         self.wrist_rotation_states.normalized_position*16,\
-                           (self.wrist_rotation_states.velocity+1.5)*16/4,\
-                             self.wrist_flexion_states.normalized_position*16,\
-                               (self.wrist_flexion_states.velocity+1.5)*16/4,\
-                                 self.gripper_states.normalized_position*16,\
-                                   (self.gripper_states.velocity+1.5)*16/4]
+#         state_joints = [self.shoulder_rotation_states.normalized_position*16,\
+#                    (self.shoulder_rotation_states.velocity+1.5)*16/4,\
+#                      self.elbow_flexion_states.normalized_position*16,\
+#                        (self.elbow_flexion_states.velocity+1.5)*16/4,\
+#                          self.wrist_rotation_states.normalized_position*16,\
+#                            (self.wrist_rotation_states.velocity+1.5)*16/4,\
+#                              self.wrist_flexion_states.normalized_position*16,\
+#                                (self.wrist_flexion_states.velocity+1.5)*16/4,\
+#                                  self.gripper_states.normalized_position*16,\
+#                                    (self.gripper_states.velocity+1.5)*16/4,\
+#                                      self.trace_shoulder*16, self.trace_elbow*16,\
+#                                        self.trace_wrist_rotation*16, self.trace_wrist_flex*16,\
+#                                          self.trace_gripper*16,\
+#                                            self.gripper_states.normalized_load*16]
+        state_joints = [(self.shoulder_rotation_states.normalized_position)*norm_const,\
+                      (self.elbow_flexion_states.normalized_position-0.4)*2.7*norm_const,\
+                              (self.wrist_flexion_states.normalized_position+0.1)*norm_const/1.3,\
+                                  ((self.gripper_states.normalized_position*100)-0.141)*17*norm_const,\
+                                   (self.shoulder_rotation_states.velocity+1.5)*norm_const/4,\
+                                   (self.elbow_flexion_states.velocity+1.5)*norm_const/4,\
+                                   (self.wrist_flexion_states.velocity+1.5)*norm_const/4,\
+                                   (self.gripper_states.velocity+1.5)*norm_const/4,\
+                                                self.gripper_states.normalized_load*norm_const]
         self.numstates_joints = len(state_joints)
+#         print self.shoulder_rotation_states.normalized_position
+#         print (self.elbow_flexion_states.normalized_position-0.40)*2.7
+#         print (self.wrist_flexion_states.normalized_position+0.1)/1.3
+#         print ((self.gripper_states.normalized_position*100)-0.141)*17
+#         print (self.shoulder_rotation_states.velocity+1.5)/4
+#         print (self.elbow_flexion_states.velocity+1.5)/4
+#         print (self.wrist_flexion_states.velocity+1.5)/4
+#         print (self.gripper_states.velocity+1.5)/4
+               
+# self.trace_shoulder*norm_const, self.trace_elbow*norm_const,\
+#                                         self.trace_wrist_flex*norm_const,\
+#                                           self.trace_gripper*norm_const, \
 
-        
+#         (self.shoulder_rotation_states.velocity+1.5)*norm_const/4,\
+#         (self.elbow_flexion_states.velocity+1.5)*norm_const/4,\
+#         (self.wrist_rotation_states.velocity+1.5)*norm_const/4,\
+#         (self.wrist_flexion_states.velocity+1.5)*norm_const/4,\
+#         (self.gripper_states.velocity+1.5)*norm_const/4,\
+    
+#         self.wrist_rotation_states.normalized_position*norm_const,\
+
+#         self.long_trace_shoulder*norm_const,\
+#                                             self.long_trace_elbow*norm_const, self.long_trace_wrist_rotation*norm_const,\
+#                                               self.long_trace_wrist_flex*norm_const, self.long_trace_gripper*norm_const,\
         """ Defines the state for the switch signal -- includes velocity, position, and traces """
 #         state_switch = [self.shoulder_rotation_states.normalized_position]
         
-        state_switch = [self.shoulder_rotation_states.normalized_position*16,\
-                   (self.shoulder_rotation_states.velocity+1.5)*16/4,\
-                     self.elbow_flexion_states.normalized_position*16,\
-                       (self.elbow_flexion_states.velocity+1.5)*16/4,\
-                         self.wrist_rotation_states.normalized_position*16,\
-                           (self.wrist_rotation_states.velocity+1.5)*16/4,\
-                             self.wrist_flexion_states.normalized_position*16,\
-                               (self.wrist_flexion_states.velocity+1.5)*16/4,\
-                                 self.gripper_states.normalized_position*16,\
-                                   (self.gripper_states.velocity+1.5)*16/4]
+        state_switch = [self.shoulder_rotation_states.normalized_position*norm_const,\
+                   (self.shoulder_rotation_states.velocity+1.5)*norm_const/4,\
+                     self.elbow_flexion_states.normalized_position*norm_const,\
+                       (self.elbow_flexion_states.velocity+1.5)*norm_const/4,\
+                         self.wrist_rotation_states.normalized_position*norm_const,\
+                           (self.wrist_rotation_states.velocity+1.5)*norm_const/4,\
+                             self.wrist_flexion_states.normalized_position*norm_const,\
+                               (self.wrist_flexion_states.velocity+1.5)*norm_const/4,\
+                                 self.gripper_states.normalized_position*norm_const,\
+                                   (self.gripper_states.velocity+1.5)*norm_const/4]
         
         """ Defines the reward for each joint. Reward equals 1 when current joint velocity > 0.1 """
         if (self.shoulder_rotation_states.normalized_position == None or\
@@ -470,15 +538,15 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
             print "incomplete state information"   
         else:
             reward_joints = [0]*5
-            if numpy.absolute(self.gripper_states.velocity) > 0.1: # if hand is opening/closing
+            if numpy.absolute(self.gripper_states.velocity) > 0.2: # if hand is opening/closing
                 reward_joints[0] = 1 # make the reward 1 for hand joint
-            if numpy.absolute(self.wrist_rotation_states.velocity) > 0.1: # if wrist is rotating
+            if numpy.absolute(self.wrist_rotation_states.velocity) > 0.2: # if wrist is rotating
                 reward_joints[1] = 1 # make the reward 1 for wrist rotation joint
-            if numpy.absolute(self.wrist_flexion_states.velocity) > 0.1: # if wrist is flexing/extending
+            if numpy.absolute(self.wrist_flexion_states.velocity) > 0.2: # if wrist is flexing/extending
                 reward_joints[2] = 1 # make the reward 1 for wrist flex/extend joint
-            if numpy.absolute(self.elbow_flexion_states.velocity) > 0.1: # if elbow is flexing/extending
+            if numpy.absolute(self.elbow_flexion_states.velocity) > 0.2: # if elbow is flexing/extending
                 reward_joints[3] = 1 # make the reward 1 for elbow joint
-            if numpy.absolute(self.shoulder_rotation_states.velocity) > 0.1: # if shoulder is rotating
+            if numpy.absolute(self.shoulder_rotation_states.velocity) > 0.2: # if shoulder is rotating
                 reward_joints[4] = 1 # make the reward for shoulder joint
             
             
@@ -564,7 +632,7 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
         
         """ List of joints can only adapt after the arm has moved again """
-        if (self.moved == 1) and (self.switch_count >= 1):    
+        if (self.moved == 1) and (self.switch_count >= 1) and (self.switched == 0):    
             self.adaptation = True
         else:
             self.adaptation = False
@@ -572,12 +640,8 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         print 'adaptation enabled = ' + str(self.adaptation)
         
       
-        
-#         print 'a = ' + str(self.last_list)
-#         print 'A = ' + str(self.joint_list)
+        """ new_list is the list of joints from the previous time-step """
         self.new_list = self.last_list
-        print 'new new list ' + str(self.new_list)
-        
         
         """ joint_list is the ordered list formatted to send to the bento arm """
         if (self.sorted_joints[4][1] == 'shoulder'):
@@ -660,57 +724,37 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
             self.last_list[4] = self.joint_list[4]
             self.joint_list[4] = JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)  
         
-#         print 'joint_list ' + str(self.joint_list)
-#         print 'last_list ' + str(self.last_list)
         
-        print 'new list ' + str(self.new_list) # by the time it gets here, new_list has somehow changed to be equal to joint_list?!
-        print 'joint list ' + str(self.joint_list)
+#         print 'new list ' + str(self.new_list) # by the time it gets here, new_list has somehow changed to be equal to joint_list?!
+#         print 'joint list ' + str(self.joint_list)
         
-        if (self.new_list != self.joint_list):
-#             self.change_order = rospy.ServiceProxy('/bento/configure_group', ConfigureGroup)
-#             self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
-            print 'JOINT LIST CHANGED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        if (self.adaptation == True) and (self.new_list != self.joint_list):
+            self.change_order = rospy.ServiceProxy('/bento/configure_group', ConfigureGroup)
+            self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
+            print 'JOINT LIST CHANGED'
             
-#         self.last_list = self.joint_list
-        
-#         print 'joint_list ' + str(self.joint_list)
-#         print 'last_list ' + str(self.last_list)
-#         print '4th ' + str(self.joint_list[4])
-        
-        
-#         self.temp1 += 1
-#         if self.temp1 != self.temp2:
-#             print 'AAAAAAAAAAAAARRRRRRRRRRRGGGGGGGGGGGGGGGGHHHHHHHHHH'
-#         self.temp2 = self.temp1
-        
-#         """ List of joints can only adapt after the arm has moved again """
-#         if (self.moved == 1) and (self.switch_count >= 1):    
-#             self.adaptation = True
-#         else:
-#             self.adaptation = False
-#         print 'moved? ' + str(self.moved)
-#         print 'adaptation enabled = ' + str(self.adaptation)
-        
-#         self.joint_list = [JointGroupJoint(joint_id=1, min_speed=0, max_speed=1),\
-#                             JointGroupJoint(joint_id=2, min_speed=0, max_speed=1),\
-#                              JointGroupJoint(joint_id=3, min_speed=0, max_speed=1),\
-#                               JointGroupJoint(joint_id=4, min_speed=0, max_speed=1),\
-#                                JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
-        
-        
-     
-        
-#         
-#         if (self.adaptation == True and self.last_list != self.joint_list):
-#             self.change_order = rospy.ServiceProxy('/bento/configure_group', ConfigureGroup)
-#             self.change_order(group_idx = 0, joints = self.joint_list, reset_idx=True)
-#             print 'JOINT LIST CHANGED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-        
+   
+#         self.joint_ids = [self.joint_list[0].joint_id,self.joint_list[1].joint_id,self.joint_list[2].joint_id,self.joint_list[3].joint_id,self.joint_list[4].joint_id]
         
 
         """ Publish other things that might be needed for post-processing """
         self.publisher_switch_count.publish(self.switch_count)
-                    
+        self.publisher_adaptation.publish(self.adaptation)
+        self.publisher_id1.publish(self.joint_list[0].joint_id)
+        self.publisher_id2.publish(self.joint_list[1].joint_id)
+        self.publisher_id3.publish(self.joint_list[2].joint_id)
+        self.publisher_id4.publish(self.joint_list[3].joint_id)
+        self.publisher_id5.publish(self.joint_list[4].joint_id)
+#         self.publisher_joint_ids.publish(self.joint_ids)
+        
+        
+#         print "gripper load = " + str(self.gripper_states.normalized_load)
+        if (self.gripper_states.normalized_load > self.max_gripper_load):
+            self.max_gripper_load = self.gripper_states.normalized_load  
+        if (self.gripper_states.normalized_load < self.min_gripper_load):
+            self.min_gripper_load = self.gripper_states.normalized_load   
+#         print 'min load = ' + str(self.min_gripper_load)   
+#         print 'max load = ' + str(self.max_gripper_load)  
  
  
 #             if (self.switch_flag == 1):

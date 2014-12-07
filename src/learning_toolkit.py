@@ -257,7 +257,7 @@ class TDLambdaLearner(Learner):
         self.rlLambda = rlLambda
         self.rlGamma = rlGamma
     
-        self.mem_size = 2048
+        self.mem_size = 1048576 # 16,384 or 8,192 or 1,048,576 or 8,388,608 or 16,777,216 or 33,554,432
         self.prediction = None
         self.current_prediction = 0
         self.delta = 0

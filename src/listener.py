@@ -50,11 +50,16 @@ class LearnerNode():
                                              msg.velocity, msg.is_moving)
         if msg.name == 'elbow_flexion':
             self.elbow_flexion_state.update(msg.current_pos, msg.load,\
-                                             msg.velocity, msg.is_moving)       
+                                             msg.velocity, msg.is_moving)      
+#     def _bento_state_callback(self, msg):
+#         self.experiment.update_perception(self.gripper_state, self.wrist_flexion_state,\
+#                        self.wrist_rotation_state, self.shoulder_rotation_state,\
+#                        self.elbow_flexion_state, self.joint_activity_state)
         
     def listener(self):
         rospy.init_node('listener', anonymous=True)
         rospy.Subscriber('/bento/selected_joint', JointSelection, self._selected_motor_callback)
+#         rospy.Subscriber('/bento/state', BentoState, self._bento_state_callback)
         rospy.Subscriber('/bento_controller/dynamixel/wrist_rotation/state', JointState, self._motor_state_callback)
         rospy.Subscriber('/bento_controller/dynamixel/wrist_flexion/state', JointState, self._motor_state_callback)
         rospy.Subscriber('/bento_controller/dynamixel/shoulder_rotation/state', JointState, self._motor_state_callback)
@@ -62,7 +67,7 @@ class LearnerNode():
         rospy.Subscriber('/bento_controller/dynamixel/elbow_flexion/state', JointState, self._motor_state_callback)
 
         
-        r = rospy.Rate(10) #10hz
+        r = rospy.Rate(20) # 20 Hz
         while not rospy.is_shutdown(): 
             print '=================================='
             print 'Time: ' + str(rospy.get_rostime())
