@@ -12,8 +12,14 @@ import sys
 import argparse
 from PyQt4 import QtCore
 
-class experiment_wrapper(object):
-    """ Abstract Class for Implementing an Experiment """
+        
+class experiment_adaptive_joint_switching(object):
+    """
+    The job of the experiment handler is to take the information that it has available---the information
+    from the bento arm---make sure it is well formatted, and feed it to the learner. The experiment handler
+    is the learner's baby-sitter and makes sure that the learners are being given the information needed to
+    perform their job.
+    """
     def __init__(self):
         self.gripper_states = gripper()
         self.wrist_flexion_states = not_gripper()
@@ -38,270 +44,6 @@ class experiment_wrapper(object):
                                JointGroupJoint(joint_id=5, min_speed=0, max_speed=1)]
         self.max_gripper_load = -1000
         self.min_gripper_load = 1000
-        
-    def step(self):
-        
-        self.number_of_steps += 1
-        print 'steps = ' + str(self.number_of_steps)
-        
-        if self.number_of_steps == 1:
-            self.start_time = rospy.get_rostime()
-        clock_time = rospy.get_rostime()
-        avg_step = (clock_time - self.start_time)/(self.number_of_steps*10**6)
-        print 'average step length = ' + str(avg_step) + ' ms'
-#         print 'start time = ' + str(self.start_time)
-    
-    def update_perception(self, gripper_states, wrist_flexion_states,\
-                           wrist_rotation_states, shoulder_rotation_states,\
-                           elbow_flexion_states, joint_activity_states):
-
-        self.gripper_states = gripper_states
-        self.wrist_flexion_states = wrist_flexion_states
-        self.wrist_rotation_states = wrist_rotation_states
-        self.shoulder_rotation_states = shoulder_rotation_states
-        self.elbow_flexion_states = elbow_flexion_states
-        self.joint_activity_states = joint_activity_states
-        
-class example_experiment(experiment_wrapper):
-    """
-    The job of the experiment handler is to take the information that it has available---the information
-    from the bento arm---make sure it is well formatted, and feed it to the learner. The experiment handler
-    is the learner's baby-sitter and makes sure that the learners are being given the information needed to
-    perform their job.
-    """
-    def __init__(self):
-        experiment_wrapper.__init__(self) #will still make all the things in the original experiment template
-        self.td = TDLambdaLearner(1, 3, 0.5, 0.9, 0.9, 2**(2*1)) # on top of that we build a TD(/) learner
-        self.publisher_learner = rospy.Publisher('/Agent_Prediction', Float32, queue_size = 10)
-        self.publisher_return = rospy.Publisher('/Agent_Return', Float32, queue_size = 10)
-    
-    
-    def update_perception(self, gripper_states, wrist_flexion_states, 
-        wrist_rotation_states, shoulder_rotation_states, 
-        elbow_flexion_states, joint_activity_states):
-        
-        experiment_wrapper.update_perception(self, gripper_states, wrist_flexion_states,\
-                                              wrist_rotation_states, shoulder_rotation_states,\
-                                               elbow_flexion_states, joint_activity_states)
-        self.step()
-        self.publisher_learner.publish(self.td.prediction)
-        if self.td.verifier.calculateReturn() != None :
-            self.publisher_return.publish(self.td.verifier.calculateReturn())
-        
-    def step(self):
-        experiment_wrapper.step(self) #will still update in the same way as the template
-        state = [self.shoulder_rotation_states.normalized_load,\
-                  self.shoulder_rotation_states.normalized_position,\
-                   (self.shoulder_rotation_states.velocity+2)/2] # define an agent's state
-
-        if (self.shoulder_rotation_states.normalized_load == None or\
-             self.shoulder_rotation_states.normalized_position == None or\
-              self.shoulder_rotation_states.velocity == None): # safety check; make sure what you're putting into the agent is what you're expecting
-            print "incomplete state information"
-        
-        else:
-            reward = 0
-            if self.joint_activity_states.active_joint == 1: #if the joint is the one you're interested in
-                reward = 1 #make the target signal one
-            self.td.update(state, reward) # update the agent
-            
-class example_experiment_predict_Position_shoulder(experiment_wrapper):
-    """
-    The job of the experiment handler is to take the information that it has available---the information
-    from the bento arm---make sure it is well formatted, and feed it to the learner. The experiment handler
-    is the learner's baby-sitter and makes sure that the learners are being given the information needed to
-    perform their job.
-    """
-    def __init__(self, moving_average_multiplier = 0.1818):
-        experiment_wrapper.__init__(self) #will still make all the things in the original experiment template
-        self.td = TDLambdaLearner(1, 2, 0.5, 0.9, 0.9, 2**(2*1))
-        self.true_online_td = True_Online_TD2(1, 3, 0.5, 0.9, 0.9, 2**(2*1))
-        self.publisher_learner_TOD = rospy.Publisher('/True_Online_Prediction', Float32, queue_size = 10)
-        self.publisher_return_TOD = rospy.Publisher('/True_Online_Return', Float32, queue_size = 10)
-        self.publisher_learner_TD = rospy.Publisher('/TD_Prediction', Float32, queue_size = 10)
-        self.publisher_return_TD = rospy.Publisher('/TD_Return', Float32, queue_size = 10)
-        self.publisher_reward = rospy.Publisher('/reward', Float32, queue_size = 10)
-        self.shoulder_position_moving_average = 0
-        self.moving_average_multiplier = moving_average_multiplier
-    
-    def update_perception(self, gripper_states, wrist_flexion_states, 
-        wrist_rotation_states, shoulder_rotation_states, 
-        elbow_flexion_states, joint_activity_states):
-        
-        experiment_wrapper.update_perception(self, gripper_states, wrist_flexion_states,\
-                                              wrist_rotation_states, shoulder_rotation_states,\
-                                               elbow_flexion_states, joint_activity_states)
-        self.step()
-        self.publisher_learner_TD.publish(self.td.prediction)
-        if self.td.verifier.calculateReturn() != None :
-            self.publisher_return_TD.publish(self.td.verifier.calculateReturn())
-        self.publisher_learner_TOD.publish(self.true_online_td.prediction)
-        
-    def step(self):
-        experiment_wrapper.step(self) #will still update in the same way as the template
-        
-        state = [self.shoulder_rotation_states.normalized_load,\
-                  self.shoulder_rotation_states.normalized_position,\
-                   (self.shoulder_rotation_states.velocity+2)/2] # define an agent's state
-        
-        if (self.shoulder_rotation_states.normalized_load == None or\
-             self.shoulder_rotation_states.normalized_position == None or\
-              self.shoulder_rotation_states.velocity == None): # safety check; make sure what you're putting into the agent is what you're expecting
-            print "incomplete state information"
-        else:
-            self.shoulder_position_moving_average = (self.shoulder_rotation_states.normalized_position - self.shoulder_position_moving_average)\
-                                                    * self.moving_average_multiplier + self.shoulder_position_moving_average
-            reward = self.shoulder_position_moving_average
-            self.td.update(state, reward) # update the agent
-            self.true_online_td.update(state, reward)
-            self.publisher_reward.publish(reward)
-
-class example_experiment_predict_shoulder_movement_true_online_vs_td2(experiment_wrapper):
-    """
-    The job of the experiment handler is to take the information that it has available---the information
-    from the bento arm---make sure it is well formatted, and feed it to the learner. The experiment handler
-    is the learner's baby-sitter and makes sure that the learners are being given the information needed to
-    perform their job.
-    """
-    def __init__(self):
-        experiment_wrapper.__init__(self) #will still make all the things in the original experiment template
-        #Learners
-        self.td = TDLambdaLearner(10, 2, 0.1, 0.99, 0.9,2**5)
-        self.totd = True_Online_TD2(10, 2, 0.1, 0.99, 0.9,2**5)
-        #publishers for graphing
-        self.publisher_learner_TOD = rospy.Publisher('/True_Online_Prediction', Float32, queue_size = 10)
-        self.publisher_return_TOD = rospy.Publisher('/True_Online_Return', Float32, queue_size = 10)
-        self.publisher_learner_TD = rospy.Publisher('/TD_Prediction', Float32, queue_size = 10)
-        self.publisher_return_TD = rospy.Publisher('/TD_Return', Float32, queue_size = 10)
-        self.publisher_reward = rospy.Publisher('/reward', Float32, queue_size = 10)
-        #variables for moving average
-    
-    # Kind of like a main, this is what's going to be looped over.
-    def update_perception(self, gripper_states, wrist_flexion_states, 
-        wrist_rotation_states, shoulder_rotation_states, 
-        elbow_flexion_states, joint_activity_states):
-        
-        # Do the template update
-        experiment_wrapper.update_perception(self, gripper_states, wrist_flexion_states,\
-                                              wrist_rotation_states, shoulder_rotation_states,\
-                                              elbow_flexion_states, joint_activity_states)
-        # Do experiment related updates
-        self.step()
-       
-        # Do publisher related things
-        
-        self.publisher_learner_TD.publish(self.td.verifier.getSyncedPrediction())
-        self.publisher_learner_TOD.publish(self.totd.verifier.getSyncedPrediction())
-        if self.td.verifier.calculateReturn() != None: # won't have a value until horizon is reached
-            self.publisher_return_TD.publish(self.td.verifier.calculateReturn())
-            print str(self.td.verifier.calculateReturn()) + " V " 
-    def step(self):
-        experiment_wrapper.step(self) #will still update in the same way as the template
-        
-        normalized_velocity =  self.shoulder_rotation_states.velocity
-        if normalized_velocity > 0.5:
-            normalized_velocity = 1
-        elif normalized_velocity < -0.5:
-            normalized_velocity = 0
-        else:
-            normalized_velocity = 0.5
-        
-        shoulder_rotation_position_normalized = self.shoulder_rotation_states.position /5
-        
-        if self.joint_activity_states.active_joint == None:
-            self.joint_activity_states.update(0, False)
-            
-        state = [shoulder_rotation_position_normalized,\
-                  normalized_velocity] # define an agent's state
-        
-        if (self.shoulder_rotation_states.normalized_load == None or\
-             self.shoulder_rotation_states.normalized_position == None or\
-              self.shoulder_rotation_states.velocity == None): # safety check; make sure what you're putting into the agent is what you're expecting
-            print "incomplete state information"
-        else:
-            self.td.update(state, shoulder_rotation_position_normalized) # update the agent
-            self.totd.update(state, shoulder_rotation_position_normalized)
-            self.publisher_reward.publish(shoulder_rotation_position_normalized)
-            
-class example_experiment_predict_shoulder_movement_true_online_vs_td(experiment_wrapper):
-    """
-    The job of the experiment handler is to take the information that it has available---the information
-    from the bento arm---make sure it is well formatted, and feed it to the learner. The experiment handler
-    is the learner's baby-sitter and makes sure that the learners are being given the information needed to
-    perform their job.
-    """
-    def __init__(self):
-        experiment_wrapper.__init__(self) #will still make all the things in the original experiment template
-        #Learners
-        self.td = TDLambdaLearner(8, 2, 0.1, 0.99, 0.97,64)
-        #publishers for graphing
-        self.publisher_learner_TOD = rospy.Publisher('/True_Online_Prediction', Float32, queue_size = 10)
-        self.publisher_return_TOD = rospy.Publisher('/True_Online_Return', Float32, queue_size = 10)
-        self.publisher_learner_TD = rospy.Publisher('/TD_Prediction', Float32, queue_size = 10)
-        self.publisher_return_TD = rospy.Publisher('/TD_Return', Float32, queue_size = 10)
-        self.publisher_reward = rospy.Publisher('/reward', Float32, queue_size = 10)
-        #variables for moving average
-    
-    # Kind of like a main, this is what's going to be looped over.
-    def update_perception(self, gripper_states, wrist_flexion_states, 
-        wrist_rotation_states, shoulder_rotation_states, 
-        elbow_flexion_states, joint_activity_states):
-        
-        # Do the template update
-        experiment_wrapper.update_perception(self, gripper_states, wrist_flexion_states,\
-                                              wrist_rotation_states, shoulder_rotation_states,\
-                                              elbow_flexion_states, joint_activity_states)
-        # Do experiment related updates
-        self.step()
-       
-        # Do publisher related things
-        self.publisher_learner_TD.publish(self.td.prediction)
-        if self.td.verifier.calculateReturn() != None: # won't have a value until horizon is reached
-            self.publisher_return_TD.publish(self.td.verifier.calculateReturn())
-        
-        
-    def step(self):
-        experiment_wrapper.step(self) #will still update in the same way as the template
-        
-        normalized_velocity =  self.shoulder_rotation_states.velocity
-        if normalized_velocity > 0.5:
-            normalized_velocity = 1
-        elif normalized_velocity < -0.5:
-            normalized_velocity = 0.5
-        else:
-            normalized_velocity = 0
-        
-        shoulder_rotation_position_normalized = self.shoulder_rotation_states.position /5
-        
-        if self.joint_activity_states.active_joint == None:
-            self.joint_activity_states.update(0, False)
-            
-        state = [shoulder_rotation_position_normalized,\
-                  normalized_velocity] # define an agent's state
-        
-        if (self.shoulder_rotation_states.normalized_load == None or\
-             self.shoulder_rotation_states.normalized_position == None or\
-              self.shoulder_rotation_states.velocity == None): # safety check; make sure what you're putting into the agent is what you're expecting
-            print "incomplete state information"
-        else:
-            reward = 0
-            if numpy.absolute(self.shoulder_rotation_states.velocity) > 0.01:
-                reward = 1
-            self.td.update(state, reward) # update the agent
-            self.publisher_reward.publish(reward)
-        
-class experiment_adaptive_joint_switching(experiment_wrapper):
-    """
-    The job of the experiment handler is to take the information that it has available---the information
-    from the bento arm---make sure it is well formatted, and feed it to the learner. The experiment handler
-    is the learner's baby-sitter and makes sure that the learners are being given the information needed to
-    perform their job.
-    """
-    def __init__(self):
-        
-        """ Initialize with experiment wrapper -- will still make all the things in
-            the original experiment template """
-        experiment_wrapper.__init__(self) 
         
         self.learner = SwitchingLearner_bento() # not really used
         self.joints = joint_activity()
@@ -359,15 +101,20 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         self.publisher_id3 = rospy.Publisher('/joint_order/id3', Float32, queue_size = 10)
         self.publisher_id4 = rospy.Publisher('/joint_order/id4', Float32, queue_size = 10)
         self.publisher_id5 = rospy.Publisher('/joint_order/id5', Float32, queue_size = 10)
+        self.publisher_moving = rospy.Publisher('/joint_moving', Float32, queue_size = 10)
+        self.publisher_moved = rospy.Publisher('/joint_moved', Float32, queue_size = 10)
     
     def update_perception(self, gripper_states, wrist_flexion_states, 
         wrist_rotation_states, shoulder_rotation_states, 
         elbow_flexion_states, joint_activity_states):
         
-        """ Do the template update """
-        experiment_wrapper.update_perception(self, gripper_states, wrist_flexion_states,\
-                                              wrist_rotation_states, shoulder_rotation_states,\
-                                               elbow_flexion_states, joint_activity_states)
+        """ Update joint information """
+        self.gripper_states = gripper_states
+        self.wrist_flexion_states = wrist_flexion_states
+        self.wrist_rotation_states = wrist_rotation_states
+        self.shoulder_rotation_states = shoulder_rotation_states
+        self.elbow_flexion_states = elbow_flexion_states
+        self.joint_activity_states = joint_activity_states
         
         """ Do experiment-related updates """
         self.step()
@@ -375,7 +122,14 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         
     def step(self):
         
-        experiment_wrapper.step(self) 
+        self.number_of_steps += 1
+        print 'steps = ' + str(self.number_of_steps)
+        
+        if self.number_of_steps == 1:
+            self.start_time = rospy.get_rostime()
+        clock_time = rospy.get_rostime()
+        avg_step = (clock_time - self.start_time)/(self.number_of_steps*10**6)
+        print 'average step length = ' + str(avg_step) + ' ms'
         
         
         """ Setting up the switch signal """
@@ -384,15 +138,15 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         else:
             self.switch_flag = 0 
         self.active_joint_holder = self.joint_activity_states.joint_id      
-        print 'joint id = ' + str(self.joint_activity_states.joint_id)  
-        print 'switch flag = ' + str(self.switch_flag)                    
+#         print 'joint id = ' + str(self.joint_activity_states.joint_id)  
+#         print 'switch flag = ' + str(self.switch_flag)                    
             
         """ Is the arm moving? """
-        if (numpy.absolute(self.gripper_states.velocity) > 0.1 or\
-                numpy.absolute(self.wrist_rotation_states.velocity) > 0.1 or\
-                    numpy.absolute(self.wrist_flexion_states.velocity) > 0.1 or\
-                        numpy.absolute(self.elbow_flexion_states.velocity) > 0.1 or\
-                            numpy.absolute(self.shoulder_rotation_states.velocity) > 0.1):
+        if (numpy.absolute(self.gripper_states.velocity) > 0.2 or\
+                numpy.absolute(self.wrist_rotation_states.velocity) > 0.2 or\
+                    numpy.absolute(self.wrist_flexion_states.velocity) > 0.2 or\
+                        numpy.absolute(self.elbow_flexion_states.velocity) > 0.2 or\
+                            numpy.absolute(self.shoulder_rotation_states.velocity) > 0.2):
             self.moving = 1
         else:
             self.moving = 0
@@ -404,61 +158,61 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         self.switched = self.switched
         if (self.moving == 1):
             self.switched = 0
-        print 'switched? ' + str(self.switched)
+#         print 'switched? ' + str(self.switched)
             
         """ moved = 1 if the user has moved the arm but not yet switched to a new joint """     
         if (self.switched == 1):
             self.moved = 0
         elif (self.switched == 0):
             self.moved = 1
-        print 'switch count = ' + str(self.switch_count)
+#         print 'switch count = ' + str(self.switch_count)
         
         """ Short traces of joint movement """    
-        if (numpy.absolute(self.gripper_states.velocity) > 0.1):
+        if (numpy.absolute(self.gripper_states.velocity) > 0.2):
             self.trace_gripper = 1
         else:
             self.trace_gripper = self.trace_gripper * 0.99
-        if (numpy.absolute(self.wrist_rotation_states.velocity) > 0.1):
+        if (numpy.absolute(self.wrist_rotation_states.velocity) > 0.2):
             self.trace_wrist_rotation = 1
         else:
             self.trace_wrist_rotation = self.trace_wrist_rotation * 0.99
-        if (numpy.absolute(self.wrist_flexion_states.velocity) > 0.1):
+        if (numpy.absolute(self.wrist_flexion_states.velocity) > 0.2):
             self.trace_wrist_flex = 1
         else:
             self.trace_wrist_flex = self.trace_wrist_flex * 0.99
-        if (numpy.absolute(self.elbow_flexion_states.velocity) > 0.1):
+        if (numpy.absolute(self.elbow_flexion_states.velocity) > 0.2):
             self.trace_elbow = 1
         else:
             self.trace_elbow = self.trace_elbow * 0.99
-        if (numpy.absolute(self.shoulder_rotation_states.velocity) > 0.1):
+        if (numpy.absolute(self.shoulder_rotation_states.velocity) > 0.2):
             self.trace_shoulder = 1
         else:
             self.trace_shoulder = self.trace_shoulder * 0.99
         """ Long traces of joint movement """    
-        if (numpy.absolute(self.gripper_states.velocity) > 0.1):
+        if (numpy.absolute(self.gripper_states.velocity) > 0.2):
             self.long_trace_gripper = 1
         else:
             self.long_trace_gripper = self.trace_gripper * 0.999
-        if (numpy.absolute(self.wrist_rotation_states.velocity) > 0.1):
+        if (numpy.absolute(self.wrist_rotation_states.velocity) > 0.2):
             self.long_trace_wrist_rotation = 1
         else:
             self.long_trace_wrist_rotation = self.trace_wrist_rotation * 0.999
-        if (numpy.absolute(self.wrist_flexion_states.velocity) > 0.1):
+        if (numpy.absolute(self.wrist_flexion_states.velocity) > 0.2):
             self.long_trace_wrist_flex = 1
         else:
             self.long_trace_wrist_flex = self.trace_wrist_flex * 0.999
-        if (numpy.absolute(self.elbow_flexion_states.velocity) > 0.1):
+        if (numpy.absolute(self.elbow_flexion_states.velocity) > 0.2):
             self.long_trace_elbow = 1
         else:
             self.long_trace_elbow = self.trace_elbow * 0.999
-        if (numpy.absolute(self.shoulder_rotation_states.velocity) > 0.1):
+        if (numpy.absolute(self.shoulder_rotation_states.velocity) > 0.2):
             self.long_trace_shoulder = 1
         else:
             self.long_trace_shoulder = self.trace_shoulder * 0.999
         
         """ Defines the state for joint predictions. Includes current position and 
             velocity for all 5 joints. """
-        norm_const = 10
+        norm_const = 6
 #         state_joints = [(self.shoulder_rotation_states.normalized_position)*16]
         
         
@@ -614,7 +368,7 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
             self.hand_prediction = self.td0.prediction
         self.switch_prediction = self.td_switch.prediction
         
-        print 'active joint = ' + str(self.joint_activity_states.joint_id)
+#         print 'active joint = ' + str(self.joint_activity_states.joint_id)
         
         
         """ List of joints and their respective prediction values """
@@ -627,7 +381,7 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         self.dtype = [('prediction', float),('joint', 'S10')] # data types in prediction array; used for sorting
         self.joint_order = numpy.array(self.joint_predictions, dtype=self.dtype) # list of joints and their respective predictions
         self.sorted_joints = numpy.sort(self.joint_order,order='prediction') # sorted array of joints (low to high)           
-        print 'sorted joints = ' + str(self.sorted_joints)
+#         print 'sorted joints = ' + str(self.sorted_joints)
            
         
         
@@ -638,6 +392,7 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
             self.adaptation = False
         print 'moved? ' + str(self.moved)
         print 'adaptation enabled = ' + str(self.adaptation)
+        print 'switch count = ' + str(self.switch_count)
         
       
         """ new_list is the list of joints from the previous time-step """
@@ -745,6 +500,8 @@ class experiment_adaptive_joint_switching(experiment_wrapper):
         self.publisher_id3.publish(self.joint_list[2].joint_id)
         self.publisher_id4.publish(self.joint_list[3].joint_id)
         self.publisher_id5.publish(self.joint_list[4].joint_id)
+        self.publisher_moving.publish(self.moving)
+        self.publisher_moved.publish(self.moved)
 #         self.publisher_joint_ids.publish(self.joint_ids)
         
         

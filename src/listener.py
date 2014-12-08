@@ -6,6 +6,7 @@ from experiment_wrapper import *
 from experiment_state_information import *
 from learning_toolkit import *
 from bento_controller.msg import JointSelection
+from bento_controller.msg import BentoState
 from bento_controller.srv import *
 from dynamixel_msgs.msg import JointState
 from learning.msg import Learner_Information
@@ -74,7 +75,6 @@ class LearnerNode():
             self.experiment.update_perception(self.gripper_state, self.wrist_flexion_state,\
                        self.wrist_rotation_state, self.shoulder_rotation_state,\
                        self.elbow_flexion_state, self.joint_activity_state)
-#             self.experiment2.handle_trigger()
             r.sleep()
             
 #     def talker():
