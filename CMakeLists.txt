@@ -51,6 +51,7 @@ add_message_files(
   Joint_Activity_Information.msg
   Learner_Information.msg
   Motor_Information.msg
+  Float32Timed.msg
 )
 
 ## Generate services in the 'srv' folder
