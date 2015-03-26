@@ -277,13 +277,14 @@ class experiment_adaptive_joint_switching(object):
 #                                            self.gripper_states.normalized_load*16]
         state_joints = [(self.shoulder_rotation_states.normalized_position)*norm_const,\
                       (self.elbow_flexion_states.normalized_position-0.4)*2.7*norm_const,\
-                              (self.wrist_flexion_states.normalized_position+0.1)*norm_const/1.3,\
-                                  ((self.gripper_states.normalized_position*100)-0.141)*17*norm_const,\
-                                   (self.shoulder_rotation_states.velocity+1.5)*norm_const/4,\
-                                   (self.elbow_flexion_states.velocity+1.5)*norm_const/4,\
-                                   (self.wrist_flexion_states.velocity+1.5)*norm_const/4,\
-                                   (self.gripper_states.velocity+1.5)*norm_const/4,\
-                                                self.gripper_states.normalized_load*norm_const]
+                        (self.wrist_flexion_states.normalized_position+0.1)*norm_const/1.3,\
+                          ((self.gripper_states.normalized_position*100)-0.141)*17*norm_const,\
+                            (self.shoulder_rotation_states.velocity+1.5)*norm_const/4,\
+                              (self.elbow_flexion_states.velocity+1.5)*norm_const/4,\
+                                (self.wrist_flexion_states.velocity+1.5)*norm_const/4,\
+                                  (self.gripper_states.velocity+1.5)*norm_const/4,\
+                                    self.gripper_states.normalized_load*norm_const]
+        
         self.numstates_joints = len(state_joints)
 #         print self.shoulder_rotation_states.normalized_position
 #         print (self.elbow_flexion_states.normalized_position-0.40)*2.7
@@ -362,7 +363,7 @@ class experiment_adaptive_joint_switching(object):
         """ Defines the reward for switching. Reward = 1 when switch_signal = 1. When no_reward = 1, switch
             signal is computer-generated and no reward is given """
         reward_switch = 0
-        if (self.switch_flag == 1 and self.no_reward == 0):
+        if (self.switch_flag == 1):# and self.no_reward == 0):
             reward_switch = 1
         self.no_reward = 0
         
